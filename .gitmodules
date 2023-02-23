@@ -1,0 +1,3 @@
+[submodule "arcticdb"]
+	path = arcticdb
+	url = ssh://git@mangit.maninvestments.com:7999/data/arcticdb.git
