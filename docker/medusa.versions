@@ -1,7 +1,4 @@
 img_prefix=releases-docker.repo.prod.m/man/app/36-1/medcxx-36-1
-gcc_image=${img_prefix}:gcc8.2-1651584439
-boost_image=${img_prefix}:boost-1651586318
-deps_image=${img_prefix}:deps-1660121042
-build_tag=build-1660136480
+build_tag=build-1677069610
 build_image=${img_prefix}:${build_tag}
-external_image=releases-docker.repo.prod.m/man/app/36-1/medcxx-36-1-none:external-1660138412
+external_image=releases-docker.repo.prod.m/man/app/36-1/medcxx-36-1-none:external-1677070721

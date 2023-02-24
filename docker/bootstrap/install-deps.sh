@@ -14,11 +14,11 @@ alias cmake=/opt/cmake/bin/cmake
 pushd /opt/deps
     pushd src
         #################### ZLIB ###############################
-        pxy wget --quiet https://github.com/madler/zlib/archive/v1.2.11.tar.gz
-        tar xvf v1.2.11.tar.gz
-        pushd zlib-1.2.11
+        pxy wget --quiet https://github.com/madler/zlib/archive/v1.2.13.tar.gz
+        tar xvf v1.2.13.tar.gz
+        pushd zlib-1.2.13
              ./configure  CXXFLAGS=-fPIC --static && make -j $(nproc) && make install
-        popdrm #zlib-1.2.11
+        popdrm #zlib-1.2.13
 
         #################### JEMALLOC ##########################
         pxy wget --quiet https://github.com/jemalloc/jemalloc/releases/download/5.1.0/jemalloc-5.1.0.tar.bz2
@@ -30,36 +30,35 @@ pushd /opt/deps
         popdrm # jemalloc-5.1.00
 
         #################### LZ4 ##########################
-        pxy wget --quiet https://github.com/lz4/lz4/archive/v1.8.2.tar.gz
+        pxy wget --quiet https://github.com/lz4/lz4/archive/v1.8.3.tar.gz
 
-        tar xvf v1.8.2.tar.gz
-        pushd lz4-1.8.2
+        tar xvf v1.8.3.tar.gz
+        pushd lz4-1.8.3
             CPPFLAGS=-fPIC make -j $(nproc) && make install
-        popdrm # lz4-1.8.2
+        popdrm # lz4-1.8.3
         find /usr/local -name liblz4*.so* -delete # no dynamic linking
 
         #################### ZSTD ##########################
-        pxy wget --quiet https://github.com/facebook/zstd/archive/v1.3.5.tar.gz
+        pxy wget --quiet https://github.com/facebook/zstd/archive/v1.4.5.tar.gz
 
-        tar xvf v1.3.5.tar.gz
-        pushd zstd-1.3.5
+        tar xvf v1.4.5.tar.gz
+        mkpushd /tmp/zstd_build
+            cmake ${MY_CMAKE_ARGS} -DZSTD_BUILD_SHARED=OFF /opt/deps/src/zstd-1.4.5/build/cmake/
             CPPFLAGS=-fPIC make -j $(nproc) && make install
-        popdrm # zstd-1.3.5
-        # no dynamic linking
-        find /usr/local -name libzstd*.so* -delete # no dynamic linking
+        popdrm # zstd-1.4.5
 
         ################### OpenSSL ########################
-        pxy wget --quiet https://github.com/openssl/openssl/archive/OpenSSL_1_0_2p.tar.gz
-        tar xvf OpenSSL_1_0_2p.tar.gz
-        pushd openssl-OpenSSL_1_0_2p
+        pxy wget --quiet https://www.openssl.org/source/old/1.1.1/openssl-1.1.1l.tar.gz
+        tar xvf openssl-1.1.1l.tar.gz
+        pushd openssl-1.1.1l
         ./config no-shared no-dso --prefix=/usr/local/ -fPIC && make -j $(nproc) && make install
-        popdrm #openssl-OpenSSL_1_0_2p
+        popdrm #openssl-1.1.1l
 
         ################### Libcurl ########################
         pxy wget --quiet https://github.com/curl/curl/releases/download/curl-7_62_0/curl-7.62.0.tar.gz
         tar xvf curl-7.62.0.tar.gz
         pushd curl-7.62.0
-        CFLAGS="-fPIC" ./configure && make -j $(nproc) && make install
+        CFLAGS="-fPIC" ./configure --with-ssl && make -j $(nproc) && make install
         popdrm #curl-7.62.0.tar.gz
 
         ################### ProtoBuf #######################
@@ -90,32 +89,51 @@ pushd /opt/deps
         pushd cyrus-sasl-2.1.28
             CFLAGS=-fPIC ./configure --enable-static --disable-shared && CFLAGS=-fPIC LDFLAGS=-fPIC make -j $(nproc) && make install
         popdrm #cyrus sasl
+
+        #################### libsodium ################################
+        pxy wget --quiet https://download.libsodium.org/libsodium/releases/libsodium-1.0.17.tar.gz
+        tar xvf libsodium-1.0.17.tar.gz
+        pushd libsodium-1.0.17
+        CFLAGS=-fPIC LDFLAGS=-fPIC ./configure --prefix=/usr/local  --disable-pie
+        CFLAGS=-fPIC LDFLAGS=-fPIC make && make install
+        popdrm #libsodium
     popd #src
 
     mkdir git
 
 popd # /opt/deps
 
+clone_depth_1 https://github.com/libevent libevent release-2.1.12-stable
+mkpushd /tmp/libevent_build
+    LIBEVENT_ARGS="-DEVENT__LIBRARY_TYPE=STATIC"
+    cmake ${MY_CMAKE_ARGS} ${LIBEVENT_ARGS} /opt/deps/git/libevent && make -j $(nproc) && make install
+popd # /tmp/libevent_build
+
 #################### standard with clone cmake make install  ##########################
-clone_make_install https://github.com/google googletest release-1.8.0
-clone_make_install https://github.com/google double-conversion v3.1.1
-clone_make_install https://github.com/libevent libevent release-2.1.8-stable
+clone_make_install https://github.com/google googletest release-1.12.1
+clone_make_install https://github.com/google double-conversion v3.1.4
 clone_make_install https://github.com/google glog v0.3.5
 clone_make_install https://github.com/gflags gflags v2.2.2
-
+clone_make_install https://github.com/fmtlib fmt 8.1.1
 
 #################### Folly ##########################
 
-clone_depth_1 https://github.com/facebook folly v2018.08.06.00
+# See https://github.com/facebook/folly/tree/v2022.10.31.00/build/fbcode_builder/manifests for
+# Folly's own dependencies. Make sure that those above are compatible with the versions in the Folly
+# manifests if upgrading versions.
+
+clone_depth_1 https://github.com/facebook folly v2022.10.31.00
 pushd /opt/deps/git/folly
-    sed -i 's/find_package(Boost 1.51.0 MODULE/find_package(Boost 1.67.0 MODULE/g' CMake/folly-deps.cmake
-    sed -i 's/target_link_libraries(GenerateFingerprintTables PRIVATE folly_deps)/target_link_libraries(GenerateFingerprintTables PRIVATE folly_deps -static-libgcc -static-libstdc++)/g' CMakeLists.txt
     # Fix some gcc8.2 errors
     echo 'SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wno-error=class-memaccess")' >> CMakeLists.txt
 popd # /opt/deps/git/folly
 
 mkpushd /tmp/folly_build
-    cmake ${MY_CMAKE_ARGS} /opt/deps/git/folly && make -j $(nproc) && make install
+    # No exeception tracer as we link statically to libstdc++ see
+    # https://github.com/facebook/folly/issues/1623
+    # https://github.com/facebook/folly/commit/41a25b79899a7162484ddcd3ff0097f8d9f63aa1
+    FOLLY_ARGS="-DFOLLY_NO_EXCEPTION_TRACER=ON"
+    cmake ${MY_CMAKE_ARGS} ${FOLLY_ARGS} /opt/deps/git/folly && make -j $(nproc) && make install
 popd # /tmp/folly_build
 
 
@@ -169,8 +187,14 @@ popd # /tmp/aws-sdk-cpp
 
 #################### Prometheus ##########################
 
-clone_depth_1 https://github.com/jupp0r prometheus-cpp v0.12.3
+# clone_depth_1 https://github.com/jupp0r prometheus-cpp v0.12.3
+
+# We are sticked to a particular SHA from master branch because the latest release version of Prometheus is not
+# containing yet the reset() function for Histograms. It will be updated again to the original 
+# way when the new version will be released
+pxy git clone https://github.com/jupp0r/prometheus-cpp.git --branch master /opt/deps/git/prometheus-cpp
 pushd /opt/deps/git/prometheus-cpp
+    git checkout 99e4d5085e4557fc9f3bea8db0c69bb1727c3d56
     git submodule init
     pxy git submodule update
 popd # /opt/deps/git/prometheus-cpp
@@ -191,42 +215,33 @@ mkpushd /tmp/bitmagic_build/
     cmake /opt/deps/git/BitMagic/
 popd #  /tmp/bitmagic_build/
 
-#################### Wangle ##########################
+#################### Fizz   ##########################
+# Required dep of Wangle
+clone_depth_1 https://github.com/facebookincubator fizz v2022.10.31.00
+mkpushd /tmp/fizz_build/
+    cmake /opt/deps/git/fizz/fizz
+    make -j 10
+    make install
+popd # /tmp/fizz_build
 
-clone_depth_1 https://github.com/facebook wangle v2018.08.06.00
+#################### Wangle ##########################
+clone_depth_1 https://github.com/facebook wangle v2022.10.31.00
 mkpushd /tmp/wangle_build/
     sed -i 's/find_package(Glog REQUIRED)/find_package(GLog REQUIRED)/g' /opt/deps/git/wangle/wangle/CMakeLists.txt
     cmake /opt/deps/git/wangle/wangle
-    LD_LIBRARY_PATH=/usr/local/lib/; make
+    make -j 10
     make install
 popd #  /tmp/wangle_build/
 
 #################### librdkafka  ##########################
 clone_depth_1 https://github.com/edenhill librdkafka v1.5.2
-cd /opt/deps/git/librdkafka
+pushd /opt/deps/git/librdkafka
     ./configure --enable-ssl --enable-gssapi
     make -j 10
     make install
     # Just remove all .so files for rdkafka, make Cmake link to the static lib.
     rm -rf /usr/local/lib/librdkafka*.so*
-
-#################### cppkafka  ##########################
-clone_depth_1 https://github.com/mfontanini cppkafka v0.3.1
-
-mkpushd /tmp/cppkafka_build
-    sed -i 's/-Wall\"/-Wall -fPIC\"/g' /opt/deps/git/cppkafka/CMakeLists.txt
-    cmake -DCPPKAFKA_BUILD_SHARED=OFF -DCPPKAFKA_RDKAFKA_STATIC_LIB=ON /opt/deps/git/cppkafka
-    LD_LIBRARY_PATH=/usr/local/lib/;  make -j 10
-    make install
-popd # /tmp/cppkafka_build
-
-#################### msgpack  ##########################
-
-clone_depth_1 https://github.com/msgpack msgpack-c cpp-3.3.0
-mkpushd /tmp/msgpack_build
-cmake -DMSGPACK_CXX17=ON -DMSGPACK_ENABLE_SHARED=OFF  -DMSGPACK_BUILD_EXAMPLES=OFF -DMSGPACK_BUILD_TESTS=OFF /opt/deps/git/msgpack-c && make -j $(nproc) && make install
-popd # /tmp/msgpack_build
-
+popd  # /opt/deps/git/librdkafka
 
 rm -rf /tmp/*_build/ /tmp/mongo-cxx-driver
-#rm  /opt/deps/src/*
+rm -rf /opt/deps

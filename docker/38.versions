@@ -1,6 +1,3 @@
 img_prefix=releases-docker.repo.prod.m/man/app/pegcxx-38
-gcc_image=${img_prefix}:gcc8.2-1658240784
-boost_image=${img_prefix}:boost-1658241495
-deps_image=${img_prefix}:deps-1658911295
-build_tag=build-1659022263
+build_tag=build-1677066404
 build_image=${img_prefix}:${build_tag}

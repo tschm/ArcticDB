@@ -26,7 +26,8 @@ args = parser.parse_args()
 
 
 if args.python_version:
-    base_path = "/opt/pythons/{}.0/install".format(args.python_version)
+    python_root_dir = "/opt/pythons/{}.0".format(args.python_version)
+    base_path = osp.join(python_root_dir, "install")
 
     lib_path = osp.join(base_path, "lib")
     python_version = args.python_version
@@ -34,7 +35,8 @@ if args.python_version:
     python_lib_path = ""  # No reason to link against libpython
     python_lib_dir = ""
 else:
-    base_path = "/default-pegasus-venv" if args.version != "medusa" else "/opt/man/releases/python-medusa/36-1"
+    python_root_dir = "/default-pegasus-venv" if args.version != "medusa" else "/opt/man/releases/python-medusa/36-1"
+    base_path = python_root_dir
 
     lib_path = osp.join(base_path, "lib")
 
@@ -106,6 +108,8 @@ try:
 
     process_args = [
         "cmake",
+        "-DPYBIND11_FINDPYTHON=ON",
+        "-DPython_ROOT_DIR={}".format(python_root_dir),
         "-DPYTHON_LIBRARIES={}".format(lib_path),
         "-DPYTHON_INCLUDE_DIRS={}".format(include_path),
         "-DBUILD_PYTHON_VERSION={}".format(python_version),

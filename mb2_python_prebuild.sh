@@ -11,4 +11,3 @@ if [ ! -d "/opt/arcticdb" ]; then
 fi
 
 cp -r /opt/arcticdb/arcticdb_link/* /opt/arcticdb
-

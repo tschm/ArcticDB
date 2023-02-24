@@ -1,6 +1,7 @@
 #!/bin/bash
 # Docs: http://docs/core/mb2/configuration/#project-defaults
 
+echo "HELLOWORLD"
 echo $@
 
 # Python; `man.build python ...`
@@ -29,5 +30,4 @@ if [[ "$@" =~ python.* ]]; then
 
     export MB_DEBUG=true
 
-    export MB_PUBLISH_DOCKER_IMAGE_FOR=medusa,pegasus-current,pegasus-next
 fi

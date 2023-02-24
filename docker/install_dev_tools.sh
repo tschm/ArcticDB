@@ -23,3 +23,4 @@ mkpushd /tmp/clion
     popd
 popd
 
+rm -rf /tmp/clion

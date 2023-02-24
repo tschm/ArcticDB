@@ -7,11 +7,12 @@ set -euo pipefail
 mode=$1
 version=$2
 local_only=${3:-"local"}
+from_latest=${4:-""}
 
 [[ "${local_only}" == "local" ]] && echo "Local only build. Not going to push images"
 
 function usage(){
-    echo "buildimg.sh <mode> <version> where mode in {gcc,boost,deps,build}, version in {36,38,medusa}"
+    echo "buildimg.sh <mode> <version> where mode in {build,external}, version in {36,38,medusa}"
 }
 
 case $version in
@@ -49,67 +50,15 @@ function tag_img(){
     fi
 }
 
-echo "Versions $(cat ${version}.versions)"
-source ${version}.versions
-
 case $mode in
-"gcc")
-    echo "Creating gcc container"
-    dockerfile="01-gcc.Dockerfile"
-    sudo docker build . -f $dockerfile --build-arg PEG_VERSION=$pegasus_version --build-arg PEG_IMAGE=$pegasus_image -t arcticc-gcc-$version
-
-    [[ "${local_only}" == "local" ]] && exit 0
-    ts="$(date '+%s')"
-    tag=$(tag_img gcc8.2 $ts $version)
-    tag_latest=$(tag_img gcc8.2 latest $version)
-
-    sudo docker tag arcticc-gcc-$version $tag
-    sudo docker tag arcticc-gcc-$version $tag_latest
-    sudo docker push $tag
-    sudo docker push $tag_latest
-    ;;
-"boost")
-    echo "Creating boost container"
+"build")
+    echo "Creating build container"
 
     rm -f tls-ca-bundle.pem
     cp /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem .
 
-    tag="arctic-boost-${version}"
-    dockerfile="02-boost.Dockerfile"
-    sudo docker build . -f $dockerfile --build-arg IMGTAG=$gcc_image -t arcticc-boost-$version
-
-    [[ "${local_only}" == "local" ]] && exit 0
-
-    ts="$(date '+%s')"
-    tag=$(tag_img boost $ts $version)
-    tag_latest=$(tag_img boost latest $version)
-
-    sudo docker tag arcticc-boost-$version $tag
-    sudo docker tag arcticc-boost-$version $tag_latest
-    sudo docker push $tag
-    sudo docker push $tag_latest
-    ;;
-"deps")
-    echo "Creating deps container"
-    tag="arctic-deps-${version}"
-    dockerfile="03-deps.Dockerfile"
-    sudo docker build . -f $dockerfile --build-arg IMGTAG="$boost_image" -t arcticc-deps-$version
-
-    [[ "${local_only}" == "local" ]] && exit 0
-
-    ts="$(date '+%s')"
-    tag=$(tag_img deps $ts $version)
-    tag_latest=$(tag_img deps latest $version)
-
-    sudo docker tag arcticc-deps-$version $tag
-    sudo docker tag arcticc-deps-$version $tag_latest
-    sudo docker push $tag
-    sudo docker push $tag_latest
-    ;;
-"build")
-    echo "Creating build container"
-    dockerfile="04-build.Dockerfile"
-    sudo docker build . -f $dockerfile --build-arg IMGTAG="$deps_image" -t arcticc-build-$version
+    dockerfile="Dockerfile"
+    sudo docker build . -f $dockerfile --build-arg PEG_VERSION=$pegasus_version --build-arg PEG_IMAGE=$pegasus_image -t arcticc-build-$version
 
     [[ "${local_only}" == "local" ]] && exit 0
 
@@ -117,6 +66,7 @@ case $mode in
     tag=$(tag_img build $ts $version)
     tag_latest=$(tag_img build latest $version)
 
+    echo $tag | tee build_tag.$version.tmp
     sudo docker tag arcticc-build-$version $tag
     sudo docker tag arcticc-build-$version $tag_latest
     sudo docker push $tag
@@ -124,7 +74,14 @@ case $mode in
     ;;
 "external")
     echo "Creating external container"
-    dockerfile="05-external.Dockerfile"
+
+    source ${version}.versions
+    if [[ "${from_latest}" == "from_latest" ]]; then
+      build_image=$(tag_img build latest $version)
+    fi
+    echo "build_image=${build_image}"
+
+    dockerfile="external.Dockerfile"
     cp /apps/research/tools/bin/withproxy .
     sudo docker build . -f $dockerfile --build-arg IMGTAG="$build_image" -t arcticc-external
 
@@ -134,7 +91,7 @@ case $mode in
     tag=$(tag_img external $ts none)
     tag_latest=$(tag_img external latest none)
 
-    echo $tag
+    echo $tag | tee external_tag.$version.tmp
     echo $tag_latest
     sudo docker tag arcticc-external $tag
     sudo docker tag arcticc-external $tag_latest
@@ -145,4 +102,3 @@ case $mode in
     usage
     exit 1
 esac
-
