@@ -1,0 +1,83 @@
+ARG MB_FROM_IMAGE
+###
+FROM ${MB_FROM_IMAGE} as workspace
+
+ARG MB_WORKSPACE
+ARG MB_SETUP_PY
+ARG MB_AUDITWHEEL_REPAIR
+ENV MB_WORKSPACE ${MB_WORKSPACE}
+ENV MB_SETUP_PY ${MB_SETUP_PY}
+
+RUN mkdir -p ${MB_WORKSPACE}
+
+WORKDIR ${MB_WORKSPACE}
+
+COPY ./ /workspace/
+
+# preinstall numpy/Cython when they are specified as a dependency
+# they must be present before "pip install -e" for projects that build C extensions
+
+RUN set -eux ; \
+    if [ -f "mb2_python_prebuild.sh" ]; then \
+        echo "running prebuild script" ; \
+        /bin/bash -eu mb2_python_prebuild.sh ; \
+    fi ; \
+    if [ -z ${DEFAULT_PEGASUS_VENV+x} ]; then \
+        $DEFAULT_MEDUSA_VENV/bin/easy_install -U setuptools ; \
+        $DEFAULT_MEDUSA_VENV/bin/easy_install -U ahl.pkglib ; \
+        export STAMP=$(date +"%Y%m%d%H%M") ; \
+        python ${MB_SETUP_PY} develop --extras-best-effort --timestamp ${STAMP} ; \
+        easy_install wheel ; \
+        rm -rf dist dist_release ; \
+        python ${MB_SETUP_PY} --no-user-cfg bdist_egg --release --skipdevelop --timestamp ${STAMP} ; \
+        wheel convert --dest-dir dist/ dist/*.egg ; \
+        mv dist dist_release ; \
+        python ${MB_SETUP_PY} --no-user-cfg bdist_egg --skipdevelop --timestamp ${STAMP} ; \
+        wheel convert --dest-dir dist/ dist/*.egg ; \
+    else \
+        export PIP_NO_CACHE_DIR=1 ; \
+        $DEFAULT_PEGASUS_VENV/bin/pip install -U ahl.pkglib wheel ; \
+        $DEFAULT_PEGASUS_VENV/bin/upgrade_setupcfg ; \
+        $DEFAULT_PEGASUS_VENV/bin/generate_build_requirements ; \
+        branch_name="$(git symbolic-ref --short HEAD | sed 's/^hotfix\///g' || true)" ; \
+        if [[ -f "hotfixes/$branch_name/requirements.txt" ]]; then \
+            hotfix_requires="hotfixes/$branch_name/requirements.txt" ; \
+            if grep -F numpy build_requirements.txt ; then pip install numpy -c "$hotfix_requires" ; fi ; \
+            if grep -F Cython build_requirements.txt ; then pip install Cython -c "$hotfix_requires" ; fi ; \
+            pip install -r build_requirements.txt -c "$hotfix_requires" ; \
+            pip install --no-build-isolation --no-deps -e . ; \
+        else \
+            hotfix_requires= ; \
+            if grep -F numpy build_requirements.txt ; then pip install numpy ; fi ; \
+            if grep -F Cython build_requirements.txt ; then pip install Cython ; fi ; \
+            pip install --no-build-isolation -e . ; \
+            pip install -r build_requirements.txt ; \
+        fi; \
+        rm -rf dist dist_release; \
+        python ${MB_SETUP_PY} bdist_wheel ; \
+        if [[ "${MB_AUDITWHEEL_REPAIR:-}" == "yes" || "${MB_AUDITWHEEL_REPAIR:-}" == "1" || "${MB_AUDITWHEEL_REPAIR:-}" == "true" ]]; then \
+            if ! command -v patchelf >/dev/null; then \
+                curl https://repo.prod.m/artifactory/man/alpha-core-platform/patchelf/0.13.1/patchelf -o /usr/local/bin/patchelf ; \
+                chmod +x /usr/local/bin/patchelf ; \
+            fi ; \
+            pushd dist ; \
+            $DEFAULT_PEGASUS_VENV/bin/pip install auditwheel ; \
+            auditwheel repair --plat manylinux2014_x86_64 *.whl ; \
+            rm *.whl ; \
+            mv wheelhouse/*.whl . ; \
+            rm -rf wheelhouse ; \
+            rm -f /usr/local/bin/patchelf ; \
+            popd ; \
+        fi ; \
+        cp -r dist dist_release ; \
+        pip freeze > /workspace/all_requirements.txt ; \
+    fi ; \
+    if [ -f "mb2_python_postbuild.sh" ]; then \
+        echo "running postbuild script" ; \
+        /bin/bash -eu mb2_python_postbuild.sh ; \
+    fi ; \
+    mkdir -p /tmp/mb_hooks ; \
+    touch mb2_notemptydirectory.sh ; \
+    cp    mb2_*.sh /tmp/mb_hooks/ ; \
+    rm    mb2_notemptydirectory.sh ; \
+    find . -type d -name '__pycache__' -prune -exec rm -rf {} \;

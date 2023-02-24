@@ -1,0 +1,33 @@
+#!/bin/bash
+# Docs: http://docs/core/mb2/configuration/#project-defaults
+
+echo $@
+
+# Python; `man.build python ...`
+if [[ "$@" =~ python.* ]]; then
+    export MB_RUN_OPTS=${MB_RUN_OPTS:-\
+        --rm \
+        -v /apps/research/tools/mongo/3.4.13_el7:/opt/mongo \
+        -v /apps/research/tools/:/apps/research/tools/:ro \
+        -v /etc/ahl/mongo:/etc/ahl/mongo
+    }
+    if [[ "$JOB_NAME" =~ .*pegasus/next.* ]]; then
+        source docker/38.versions
+    elif [[ "$JOB_NAME" =~ .*pegasus/current.* ]]; then
+        source docker/36.versions
+    else
+        # medusa
+        source docker/medusa.versions
+    fi
+
+    export MB_PYTHON_IMAGE=${MB_PYTHON_IMAGE:-${img_prefix}}
+    export MB_PYTHON_IMAGE_TAG=${MB_PYTHON_IMAGE_TAG:-${build_tag}}
+
+    # The repos below are accessible by the whole firm
+    export MB_PYPI_REPO_PUBLIC=${MB_PYPI_REPO_PUBLIC:-http://repo.prod.m/artifactory/api/pypi/man-medusa-361-public}
+    export MB_PYPI_REPO_PINNED=${MB_PYPI_REPO_PINNED:-http://repo.prod.m/artifactory/api/pypi/man-medusa-361-pinned-private}
+
+    export MB_DEBUG=true
+
+    export MB_PUBLISH_DOCKER_IMAGE_FOR=medusa,pegasus-current,pegasus-next
+fi

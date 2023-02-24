@@ -1,0 +1,7 @@
+img_prefix=releases-docker.repo.prod.m/man/app/pegcxx-36
+gcc_image=${img_prefix}:gcc8.2-1658232116
+boost_image=${img_prefix}:boost-1658238608
+deps_image=${img_prefix}:deps-1658839052
+build_tag=build-1658854086
+build_image=${img_prefix}:${build_tag}
+external_image=releases-docker.repo.prod.m/man/app/pegcxx-none:external-1658856971

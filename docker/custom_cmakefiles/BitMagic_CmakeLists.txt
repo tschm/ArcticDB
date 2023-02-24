@@ -1,0 +1,57 @@
+cmake_minimum_required(VERSION 2.8)
+
+project(bm)
+
+
+set( CMAKE_VERBOSE_MAKEFILE on )
+
+# SET(BMOPTFLAGS "BMSSE42OPT" CACHE STRING "User-specified optimization flag")
+
+find_package(Threads REQUIRED)
+
+include_directories("${PROJECT_SOURCE_DIR}/src")
+
+set (CMAKE_CXX_STANDARD 11)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    set(warnopt "-Wno-psabi")
+endif()
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if ("${BMOPTFLAGS}" STREQUAL "BMSSE42OPT")
+	    set(bmoptf "-march=nehalem -O2 -msse4.2 -DBMSSE42OPT")
+    elseif("${BMOPTFLAGS}" STREQUAL "BMAVX2OPT")
+        set(bmoptf "-march=skylake -mavx2 -O2 -DBMAVX2OPT")
+    else()
+	if (CMAKE_BUILD_TYPE MATCHES "Release")
+		set(bmoptf "-march=native -O2")
+	else()
+		set(bmoptf "-march=native")
+	endif()
+    endif()
+
+    set(flags "-Wall -Wextra -Wno-ignored-qualifiers -fPIC -fomit-frame-pointer")
+    set(optflags -g0 -O2)
+    set(bmptflags -pthread)
+    SET( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -Wl,-lpthread")
+    
+
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+    set(flags, "-tpp7 -march=core2 -restrict -DBM_HASRESTRICT -fno-fnalias -Wall")
+    set(optflags, "-g0 -O2 -opt_report_fileopt.txt -opt_report_levelmax")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    if ("${BMOPTFLAGS}" STREQUAL "BMSSE42OPT")
+	set(bmoptf "-DBMSSE42OPT")
+    elseif("${BMOPTFLAGS}" STREQUAL "BMAVX2OPT")
+        set(bmoptf "-DBMAVX2OPT") 
+    endif()
+
+    set(flags "/W4 /EHsc /F 5000000 ")
+    set(optflags "-O2")
+    SET( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ")
+endif()
+
+set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${flags} ${bmoptf} ${bmptflags}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flags} ${bmoptf} ${bmptflags} ${warnopt}")
+
+set(BITMAGIC_INCLUDE_DIRS "/usr/local/include")
