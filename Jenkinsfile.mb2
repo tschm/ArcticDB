@@ -2,7 +2,6 @@
 def BRANCH = env.BRANCH_NAME
 
 manBuild {
-    blackFoldersToCheck='arcticc tests scripts'
     notifyOn = ['medusa', 'pegasus-current', 'pegasus-next']
     git_lfs = true
     workflow = [
