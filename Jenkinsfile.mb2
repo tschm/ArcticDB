@@ -5,7 +5,6 @@ manBuild {
     notifyOn = ['medusa', 'pegasus-current', 'pegasus-next']
     git_lfs = true
     workflow = [
-        runBlackStage(),
         manbuildPythonBuildStage(),
         [name: 'test tests/stress', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=stress', 'MB_TESTS=tests/stress']).action],
         [name: 'test cppunit', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=1', 'MB_TEST_STAGE=cppunit', 'MB_CUSTOM_TEST_COMMAND=scripts/test_runs/run_cpptest.sh']).action],
