@@ -1,0 +1,13 @@
+ARG MB_FROM_IMAGE
+FROM ${MB_FROM_IMAGE}
+###########################################################################################################
+# Documentation:                                                                                          #
+#   http://docs/core/mb2/adoption/#python-standard-image-format-additions                                 #
+##################################### APPENDED LAYERS AFTER THIS LINE #####################################
+
+ENV PATH="/default-medusa-venv/bin/:$PATH"
+
+# needed for non_reg tests
+#RUN pyinstall man.core
+#RUN pyinstall tables
+#RUN pip uninstall -y arcticc
