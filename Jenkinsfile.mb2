@@ -9,9 +9,9 @@ manBuild {
         [name: 'test tests/stress', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=stress', 'MB_TESTS=python/tests/stress']).action],
         [name: 'test cppunit', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=1', 'MB_TEST_STAGE=cppunit', 'MB_CUSTOM_TEST_COMMAND=scripts/test_runs/run_cpptest.sh']).action],
         [name: 'test rapidcheck', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=1', 'MB_TEST_STAGE=rapidcheck', 'MB_CUSTOM_TEST_COMMAND=scripts/test_runs/run_rapidcheck.sh']).action],
-        [name: 'test tests/unit', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=unit', 'MB_TESTS=tests/unit']).action],
-        [name: 'test tests/integration', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=int', 'MB_TESTS=tests/integration']).action],
-        [name: 'test tests/nonreg', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=nonreg', 'MB_TESTS=tests/nonreg']).action],
+        [name: 'test tests/unit', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=unit', 'MB_TESTS=python/tests/unit']).action],
+        [name: 'test tests/integration', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=int', 'MB_TESTS=python/tests/integration']).action],
+        [name: 'test tests/nonreg', action: manbuildPythonTestStage(['PIPELINE_NODE_TOTAL=4', 'MB_TEST_STAGE=nonreg', 'MB_TESTS=python/tests/nonreg']).action],
         manbuildPythonCoverageStage(),
         manbuildPythonPublishStage(),
     ]

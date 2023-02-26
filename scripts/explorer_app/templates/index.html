@@ -1,0 +1,19 @@
+{% include 'header.html' %}
+  <h1> Environment: {{ parent }}</h1>
+    <ul id="children">
+    {% for item in children %}
+        <li>
+            <a href={{ url_for('get_library', library=item) }}>
+                {{ item }}
+            </a>
+        </li>
+    {% endfor %}
+    </ul>
+
+  <h2>
+      Extra info:
+      <br>
+      {{ extra }}
+  </h2>
+
+{% include 'footer.html' %}

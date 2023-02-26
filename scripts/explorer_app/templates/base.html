@@ -1,0 +1,18 @@
+{% include 'header.html' %}
+
+  <h1> Parent: {{ parent }}</h1>
+    <ul id="children">
+    {% for item in children %}
+        <li>
+            {{ item }}
+        </li>
+    {% endfor %}
+    </ul>
+
+  <h2>
+      Extra info:
+      <br>
+      {{ extra }}
+  </h2>
+
+{% include 'footer.html' %}

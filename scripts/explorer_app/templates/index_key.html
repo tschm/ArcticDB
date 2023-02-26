@@ -1,0 +1,17 @@
+{% include 'header.html' %}
+
+<h2> Library: {{ library }}</h2>
+<h2> Symbol: {{ symbol }}</h2>
+<h2> Index key </h2>
+<h4> Data Segments in Index: </h4>
+<ul id="children">
+{% for item in children %}
+    <li>
+    <a href={{ to_url(item, library) }}>
+        {{ item }}
+    </a>
+    </li>
+{% endfor %}
+</ul>
+
+{% include 'footer.html' %}
