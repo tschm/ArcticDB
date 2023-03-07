@@ -1,0 +1,3 @@
+[submodule "arcticdb_link"]
+	path = arcticdb_link
+	url = https://github.com/man-group/ArcticDB.git
