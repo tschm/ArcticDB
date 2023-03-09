@@ -98,7 +98,7 @@ def main():
         opts.git_tag,
         not opts.no_archive,
         opts.archive_path,
-        setup_path=os.path.join(p, "arcticdb_link", "setup.py"),
+        setup_path=os.path.join(p, "scripts", "setup_external.py"),
     )
 
 
