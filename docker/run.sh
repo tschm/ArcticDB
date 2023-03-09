@@ -19,6 +19,9 @@ case "$1" in
 esac
 
 map_src=${PWD}
+echo "map_src" "${map_src}"
+
+ls -al
 
 source docker/${version}.versions
 
