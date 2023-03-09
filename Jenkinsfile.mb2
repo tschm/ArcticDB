@@ -2,7 +2,7 @@
 def BRANCH = env.BRANCH_NAME
 
 manBuild {
-    notifyOn = ['medusa', 'pegasus-current', 'pegasus-next']
+    notifyOn = ['pegasus-current']
     git_lfs = true
     workflow = [
         manbuildPythonBuildStage(),
