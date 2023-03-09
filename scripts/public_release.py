@@ -38,10 +38,10 @@ IS_WINDOWS = sys.platform == "win32"
 
 def build(py_tag: str, version: str, archive: bool, archive_path: str, setup_path: str):
     args = ["python", setup_path, "bdist_wheel", "--python-tag", py_tag]
-    if archive:
-        args += ["--archive=1", "--archive-path", archive_path]
-        os.makedirs(os.path.join(archive_path, version, "archives"), exist_ok=True)
-        os.makedirs(os.path.join(archive_path, version, "wheels"), exist_ok=True)
+    # if archive:
+    #     args += ["--archive=1", "--archive-path", archive_path]
+    #     os.makedirs(os.path.join(archive_path, version, "archives"), exist_ok=True)
+    #     os.makedirs(os.path.join(archive_path, version, "wheels"), exist_ok=True)
 
     print(f"Running '{args}'")
     ret = subprocess.run(args)
@@ -69,10 +69,10 @@ def run(py_tags: typing.List[str], version: str, tag: bool, archive: bool, archi
 
 def main():
     p = pathlib.Path(__file__).parent.resolve().parent
-    os.chdir(p)
+    os.chdir(os.path.join(p, "arcticdb_link"))
 
     cfg = configparser.ConfigParser()
-    cfg.read("setup_external.cfg")
+    cfg.read("setup.cfg")
 
     config = {k: [_v for _v in v.split("\n") if _v] for k, v in cfg["metadata"].items()}
     config = {k: (v[0] if len(v) == 1 else v) for k, v in config.items()}
@@ -98,7 +98,7 @@ def main():
         opts.git_tag,
         not opts.no_archive,
         opts.archive_path,
-        setup_path=os.path.join(p, "setup_external.py"),
+        setup_path=os.path.join(p, "arcticdb_link", "setup.py"),
     )
 
 
