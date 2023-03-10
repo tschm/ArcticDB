@@ -17,7 +17,7 @@ withproxy /opt/pythons/3.9.0/install/bin/twine upload --verbose -u blahblahblah 
 
 To install across all python, use the many linux image:
 
-sudo docker run -v <PATH TO ARCTIC>:/opt/arcticc -v <PATH TO ARCTIC>/docker/pip.conf:/root/.pip/pip.conf  -v /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem:/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem -v /apps/research/tools/bin/withproxy:/usr/bin/withproxy -it releases-docker.repo.prod.m/man/base/manylinux2014_x86_64:2021-11-28-06a91ec
+sudo docker run -v <PATH TO ARCTIC>:/opt/arcticdb -v <PATH TO ARCTIC>/docker/pip.conf:/root/.pip/pip.conf  -v /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem:/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem -v /apps/research/tools/bin/withproxy:/usr/bin/withproxy -it releases-docker.repo.prod.m/man/base/manylinux2014_x86_64:2021-11-28-06a91ec
 
 Then install (for example 3.6):
 
@@ -38,10 +38,10 @@ IS_WINDOWS = sys.platform == "win32"
 
 def build(py_tag: str, version: str, archive: bool, archive_path: str, setup_path: str):
     args = ["python", setup_path, "bdist_wheel", "--python-tag", py_tag]
-    # if archive:
-    #     args += ["--archive=1", "--archive-path", archive_path]
-    #     os.makedirs(os.path.join(archive_path, version, "archives"), exist_ok=True)
-    #     os.makedirs(os.path.join(archive_path, version, "wheels"), exist_ok=True)
+    if archive:
+        args += ["--archive=1", "--archive-path", archive_path]
+        os.makedirs(os.path.join(archive_path, version, "archives"), exist_ok=True)
+        os.makedirs(os.path.join(archive_path, version, "wheels"), exist_ok=True)
 
     print(f"Running '{args}'")
     ret = subprocess.run(args)
@@ -59,17 +59,32 @@ def tag(version: str):
     ret.check_returncode()
 
 
-def run(py_tags: typing.List[str], version: str, tag: bool, archive: bool, archive_path: str, setup_path: str):
+def run(py_tags: typing.List[str], version: str, do_tag: bool, archive: bool, archive_path: str, setup_path: str):
     for py_tag in py_tags:
         build(py_tag, version, archive=archive, archive_path=archive_path, setup_path=setup_path)
 
-    if tag:
+    if do_tag:
         tag(version)
 
 
 def main():
-    p = pathlib.Path(__file__).parent.resolve().parent
+    print("licenses symlinks...")
+    if os.path.exists("LICENSE.txt"):
+        print("removing existing license symlink")
+        os.remove("LICENSE.txt")
+    if os.path.exists("NOTICE.txt"):
+        print("removing existing NOTICE.txt symlink")
+        os.remove("NOTICE.txt")
+    os.symlink("arcticdb_link/LICENSE.txt", "LICENSE.txt")
+    os.symlink("arcticdb_link/NOTICE.txt", "NOTICE.txt")
+    print("license symlinks created")
 
+    os.chdir("arcticdb_link")
+    protoc = ["python", "setup.py", "protoc"]
+    subprocess.check_call(protoc)
+    os.chdir("..")
+
+    p = pathlib.Path(__file__).parent.resolve().parent
     cfg = configparser.ConfigParser()
     cfg.read(os.path.join(p, "arcticdb_link", "setup.cfg"))
 

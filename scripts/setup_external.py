@@ -1,4 +1,5 @@
 import os
+import shutil
 import os.path as osp
 import subprocess
 import sys
@@ -12,81 +13,9 @@ from setuptools.command.build_py import build_py
 from setuptools.command.develop import develop
 from wheel.bdist_wheel import bdist_wheel
 
+
 BASE_DIRECTORY=pathlib.Path(__file__).parent.resolve().parent
 print("BASE_DIRECTORY: ", BASE_DIRECTORY)
-
-class ProtobufFiles(object):
-    def __init__(
-        self,
-        include_dir="cpp/proto",  # -I
-        python_out_dir="python",  # --python_out
-        grpc_out_dir=None,  # --grpc_python_out
-        sources=[],  # arguments of proto
-    ):
-        self.include_dir = include_dir
-        self.sources = sources
-        self.python_out_dir = python_out_dir
-        self.grpc_out_dir = grpc_out_dir
-
-    def compile(self):
-        # import deferred here to avoid blocking installation of dependencies
-        cmd = ["-mgrpc_tools.protoc"]
-
-        cmd.append("-I{}".format(self.include_dir))
-
-        cmd.append("--python_out={}".format(self.python_out_dir))
-        if self.grpc_out_dir:
-            cmd.append("--grpc_python_out={}".format(self.grpc_out_dir))
-
-        cmd.extend(self.sources)
-
-        cmd_shell = "{} {}".format(sys.executable, " ".join(cmd))
-        print('Running "{}"'.format(cmd_shell))
-        for line in subprocess.check_output(cmd_shell, shell=True, stderr=subprocess.STDOUT):
-            print("ProtobufFiles: ", line)
-
-
-proto_files = ProtobufFiles(sources=["cpp/proto/arcticc/pb2/*.proto"])
-
-
-def compile_protos():
-    print("\nProtoc compilation")
-    proto_files.compile()
-    if not os.path.exists("python/arcticc"):
-        raise RuntimeError("Unable to locate Protobuf module during compilation.")
-    else:
-        open("python/arcticc/__init__.py", "a").close()
-        open("python/arcticc/pb2/__init__.py", "a").close()
-
-
-class CompileProto(Command):
-    description = '"protoc" generate code _pb2.py from .proto files'
-
-    user_options = []
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        compile_protos()
-
-
-class CompileProtoAndBuild(build_py):
-    def run(self):
-        compile_protos()
-        build_py.run(self)
-
-
-class DevelopAndCompileProto(develop):
-    def run(self):
-        develop.run(self)
-        compile_protos()  # compile after updating the deps
-        if not os.path.islink("python/arcticdb_ext.so") and os.path.exists("python"):
-            print("Creating symlink for compiled arcticdb module in python...")
-            os.symlink("../arcticdb_ext.so", "python/arcticdb_ext.so")
 
 
 class CMakeExtension(Extension):
@@ -171,7 +100,7 @@ class CMakeBuild(build_ext):
                     os.path.join(BASE_DIRECTORY, "docker/run.sh"),
                     version,
                     "external",
-                    "/opt/arcticc/docker/build.py",
+                    "/opt/arcticdb/docker/build.py",
                     "--bdir",
                     extdir,
                     "--version",
@@ -183,32 +112,87 @@ class CMakeBuild(build_ext):
                     "--no-ssl",
                     "--no-tests",
                     "--hide-linked-symbols",
-                    "--external-release",
                 ]
             )
         else:
             raise ValueError("Must set --python-tag")
 
+
+# Defining the below allows us to avoid depending on the AHL setuptools extensions for builds.
+# Newer versions of setuptools obviously can parse the .cfg as well, but the version we use internally is old enough
+# that we rely on our own code to do the parsing.
+import configparser
+from distutils.command.build import build as _build
+cfg = configparser.ConfigParser()
+p = pathlib.Path(__file__).parent.resolve().parent
+cfg.read(os.path.join(p, "arcticdb_link", "setup.cfg"))
+
+config = {k: [_v for _v in v.split("\n") if _v] for k, v in cfg["metadata"].items()}
+config = {k: (v[0] if len(v) == 1 else v) for k, v in config.items()}
+
+from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+
+if "--python-tag" in sys.argv:
+    tag = sys.argv[sys.argv.index("--python-tag") + 1]
+    if tag not in ("cp36", "cp37", "cp38", "cp39", "cp310"):
+        raise ValueError("Only supported python tags are cp36, cp37, cp38, cp39 and cp310.")
+
+    class bdist_wheel(_bdist_wheel):
+        user_options = _bdist_wheel.user_options + [
+            ("archive=", None, "If set (--archive=1), will archive non-stripped binaries to `archive_path`"),
+            ("archive-path=", None, "Path to archive wheels and non-stripped binaries to. "
+                                    "Under this path, a new directory will be created for the version and under "
+                                    "the version directory two new directories will be created: "
+                                    "`archives` and `wheels`")
+        ]
+
+        def initialize_options(self):
+            ret = _bdist_wheel.initialize_options(self)
+            self.archive = False
+            self.archive_path = None
+            return ret
+
+        def finalize_options(self):
+            global ARCHIVE_PATH, ARCHIVE
+            ret = _bdist_wheel.finalize_options(self)
+            ARCHIVE = self.archive
+            ARCHIVE_PATH = self.archive_path
+            return ret
+
+        def get_tag(self):
+            python, abi, plat = _bdist_wheel.get_tag(self)
+            tag_suffix = "m" if int(tag.split("cp")[1]) < 38 else ""
+            return tag, tag + tag_suffix, plat
+
+        def run(self):
+            print(f"self.bdist_dir=[{self.bdist_dir}]")
+            if self.bdist_dir.startswith('build/') or self.bdist_dir.startswith('build\\'):  # just in case self.bdist_dir is somehow '/'...
+                print(f"Removing {self.bdist_dir}")
+                shutil.rmtree(self.bdist_dir, ignore_errors=True)
+
+            return _bdist_wheel.run(self)
+
+    class build(_build):
+        def finalize_options(self):
+            super(build, self).finalize_options()
+
+            self.build_lib = self.build_lib[:-3] + tag[2:].replace("3", "3.", 1)  # cp38 -> 3.8
+            shutil.rmtree(self.build_lib, ignore_errors=True)
+else:
+    raise ValueError("Must include --python-tag in build arguments. "
+                     "Valid options are cp36, cp37, cp38, cp39, cp310.")
+
 if __name__ == "__main__":
-    try:
-        # subprocess.check_output(["ln", "-s", "cpp", os.path.join(BASE_DIRECTORY, "cpp")])
-        # subprocess.check_output(["ln", "-s", "python", os.path.join(BASE_DIRECTORY, "python")])
-        # subprocess.check_output(["ln", "-s", "setup.py", os.path.join(BASE_DIRECTORY, "setup.py")])
-        # subprocess.check_output(["ln", "-s", "setup.cfg", os.path.join(BASE_DIRECTORY, "setup.cfg")])
-        result = setup(
-            ext_modules=[CMakeExtension("arcticdb_ext")],
-            package_dir={"": "python"},
-            packages=find_packages(where="python", exclude=["tests", "tests.*"]),
-            cmdclass=dict(
-                build_ext=CMakeBuild,
-                protoc=CompileProto,
-                build_py=CompileProtoAndBuild,
-                bdist_wheel=bdist_wheel,
-                develop=DevelopAndCompileProto,
-            ),
-            zip_safe=False,
-        )
-    except Exception as e:
-        print(e)
-        print(traceback.format_exc())
-        raise e
+    result = setup(
+        ext_modules=[CMakeExtension("arcticdb_ext")],
+        package_dir={"": "arcticdb_link/python"},
+        packages=find_packages(where="arcticdb_link/python", exclude=["tests", "tests.*"]),
+        package_data={'arcticdb': ['NOTICE.txt']},
+        cmdclass=dict(
+            build_ext=CMakeBuild,
+            bdist_wheel=bdist_wheel,
+            build=build,
+        ),
+        zip_safe=False,
+        **config
+    )
