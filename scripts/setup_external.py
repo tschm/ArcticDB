@@ -12,6 +12,8 @@ from setuptools.command.build_py import build_py
 from setuptools.command.develop import develop
 from wheel.bdist_wheel import bdist_wheel
 
+BASE_DIRECTORY=pathlib.Path(__file__).parent.resolve().parent
+print("BASE_DIRECTORY: ", BASE_DIRECTORY)
 
 class ProtobufFiles(object):
     def __init__(
@@ -95,9 +97,8 @@ class CMakeExtension(Extension):
 
 class CMakeBuild(build_ext):
     def run(self):
-        p = pathlib.Path(__file__).parent.resolve().parent
         try:
-            subprocess.check_output([os.path.join(p, "docker/run.sh"), "uptime"], stderr=subprocess.STDOUT)
+            subprocess.check_output([os.path.join(BASE_DIRECTORY, "docker/run.sh"), "uptime"], stderr=subprocess.STDOUT, cwd=BASE_DIRECTORY)
         except OSError:
             raise RuntimeError("You default docker build parameter are incorrect. See docker.run.sh")
         except subprocess.CalledProcessError as e:
@@ -165,10 +166,9 @@ class CMakeBuild(build_ext):
             tag = sys.argv[sys.argv.index("--python-tag") + 1]
             python_version = tag[2] + "." + tag[3:]
 
-            p = pathlib.Path(__file__).parent.resolve().parent
             subprocess.check_call(
                 [
-                    os.path.join(p, "docker/run.sh"),
+                    os.path.join(BASE_DIRECTORY, "docker/run.sh"),
                     version,
                     "external",
                     "/opt/arcticc/docker/build.py",
@@ -180,8 +180,6 @@ class CMakeBuild(build_ext):
                     python_version,
                     "--cores",
                     "{:d}".format(cores_count),
-                    "--cython-path",
-                    "arcticc_cython",
                     "--no-ssl",
                     "--no-tests",
                     "--hide-linked-symbols",
@@ -193,8 +191,10 @@ class CMakeBuild(build_ext):
 
 if __name__ == "__main__":
     try:
-        p = pathlib.Path(__file__).parent.resolve().parent
-        os.chdir(os.path.join(p, "arcticdb_link"))
+        # subprocess.check_output(["ln", "-s", "cpp", os.path.join(BASE_DIRECTORY, "cpp")])
+        # subprocess.check_output(["ln", "-s", "python", os.path.join(BASE_DIRECTORY, "python")])
+        # subprocess.check_output(["ln", "-s", "setup.py", os.path.join(BASE_DIRECTORY, "setup.py")])
+        # subprocess.check_output(["ln", "-s", "setup.cfg", os.path.join(BASE_DIRECTORY, "setup.cfg")])
         result = setup(
             ext_modules=[CMakeExtension("arcticdb_ext")],
             package_dir={"": "python"},

@@ -69,10 +69,9 @@ def run(py_tags: typing.List[str], version: str, tag: bool, archive: bool, archi
 
 def main():
     p = pathlib.Path(__file__).parent.resolve().parent
-    os.chdir(os.path.join(p, "arcticdb_link"))
 
     cfg = configparser.ConfigParser()
-    cfg.read("setup.cfg")
+    cfg.read(os.path.join(p, "arcticdb_link", "setup.cfg"))
 
     config = {k: [_v for _v in v.split("\n") if _v] for k, v in cfg["metadata"].items()}
     config = {k: (v[0] if len(v) == 1 else v) for k, v in config.items()}

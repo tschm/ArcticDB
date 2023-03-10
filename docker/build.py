@@ -115,7 +115,7 @@ try:
         "-DBUILD_PYTHON_VERSION={}".format(python_version),
         "-DPYTHON_LIBRARY_SO={}".format(python_lib_path),
     ] + additional_options + [
-        "/opt/arcticc",
+        "/opt/arcticc/arcticdb_link/cpp",
     ]
 
     os.chdir(build_dir)
