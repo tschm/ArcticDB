@@ -48,18 +48,12 @@ else:
     python_lib_dir = lib_path
 
 build_dir = "/tmp/build"
-dest_build_dir = "/opt/arcticc/{}".format(args.bdir)
-expected_artifacts = ["arcticcxx/arcticcxx.so"]
+dest_build_dir = "/opt/arcticdb/{}".format(args.bdir)
 
 if not osp.exists(build_dir):
     os.makedirs(build_dir, mode=0o750)
 if not osp.exists(dest_build_dir):
     os.makedirs(dest_build_dir, mode=0o750)
-for tgt in expected_artifacts:
-    f = osp.join(dest_build_dir, osp.split(tgt)[1])
-    if osp.exists(f):
-        os.remove(f)
-
 
 cwd = os.getcwd()
 try:
@@ -115,7 +109,7 @@ try:
         "-DBUILD_PYTHON_VERSION={}".format(python_version),
         "-DPYTHON_LIBRARY_SO={}".format(python_lib_path),
     ] + additional_options + [
-        "/opt/arcticc",
+        "/opt/arcticdb/arcticdb_link/cpp",
     ]
 
     os.chdir(build_dir)

@@ -1,0 +1,11 @@
+pytest
+pandas
+numpy
+boto3
+moto[server]
+werkzeug
+pytest-server-fixtures
+
+grpcio
+grpcio-tools
+
