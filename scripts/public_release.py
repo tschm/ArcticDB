@@ -1,7 +1,6 @@
 """
 Creates a public release by building across all supported Python versions (36, 37, 38, 39 and 310 at the time of
-writing). Optionally, the script will also archive the build directories and wheels to a given directory. Wheels are
-the build directories zipped up, renamed to end in whl, and all binaries stripped of debug symbols.
+writing). Optionally, the script will also archive the stripped symbols to a given directory.
 
 After having built the wheels, to publish, pop into an "external" container:
 
@@ -40,8 +39,6 @@ def build(py_tag: str, version: str, archive: bool, archive_path: str, setup_pat
     args = ["python", setup_path, "bdist_wheel", "--python-tag", py_tag]
     if archive:
         args += ["--archive=1", "--archive-path", archive_path]
-        os.makedirs(os.path.join(archive_path, version, "archives"), exist_ok=True)
-        os.makedirs(os.path.join(archive_path, version, "wheels"), exist_ok=True)
 
     print(f"Running '{args}'")
     ret = subprocess.run(args)

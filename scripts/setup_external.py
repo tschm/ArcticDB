@@ -14,6 +14,9 @@ from setuptools.command.develop import develop
 from wheel.bdist_wheel import bdist_wheel
 
 
+ARCHIVE = None
+ARCHIVE_PATH = None
+
 BASE_DIRECTORY=pathlib.Path(__file__).parent.resolve().parent
 print("BASE_DIRECTORY: ", BASE_DIRECTORY)
 
@@ -41,8 +44,6 @@ class CMakeBuild(build_ext):
         print(ext.name)
         print(extdir)
         print(self.build_temp)
-        # we only realistically support these two versions
-        import sys
 
         v_info = sys.version_info
         if v_info >= (3, 8):
@@ -51,46 +52,39 @@ class CMakeBuild(build_ext):
             version = "36"
         else:
             version = "medusa"
+
         print("version is {}".format(version))
-
-        is_jenkins = os.getenv("JENKINS_URL") is not None and os.getenv("WORKSPACE") is not None
-        is_man_build = os.getenv("MB_SETUP_PY")
-
-        so_file = "{}.so".format(ext.name)
-        toolbox_so_file = "{}_toolbox.so".format(ext.name)
-        so_files_built = all([osp.exists(osp.join(extdir, f)) for f in [so_file, toolbox_so_file]])
-
-        if (is_jenkins or is_man_build) and so_files_built:
-            # skip rebuild in jenkins or man_build, which run through this code multiple times
-            # (first develop, then bdist_egg (twice))
-            return
+        so_file = "arcticdb_ext.so"
 
         cores_count = 12
         print("cores_count is ", cores_count)
         self.run_docker(version, extdir, cores_count)
 
-        for f in [so_file, toolbox_so_file]:
-            try:
-                os.remove(f)
-            except:
-                pass
+        try:
+            os.remove(so_file)
+        except:
+            pass
 
-            if not osp.exists(f):
-                extension_file = osp.join(extdir, f)
-                if not osp.exists(extension_file):
-                    # TODO: This'll need to be adaptable to Pegasus/non3.6
-                    py_version = "3.8" if version == "38" else "3.6"
-                    extension = osp.join(extdir, "build/lib.linux-x86_64-{}".format(py_version), f)
-                else:
-                    extension = osp.join(extdir, f)
+        extension_file = osp.join(extdir, so_file)
+        extension = osp.join(extdir, so_file)
+        print(f"Symlinking from '{extension}' to {so_file}")
+        os.symlink(extension, so_file)
 
-                print(f"Symlinking from '{extension}' to {f}")
-                os.symlink(extension, f)
+        if ARCHIVE:
+            print(f"Archiving extension with debug symbols to {ARCHIVE_PATH}")
+            shutil.copy(so_file, ARCHIVE_PATH)
+            assert os.path.isfile(os.path.join(ARCHIVE_PATH, so_file))
+
+        print("Stripping symbols")
+        subprocess.check_call(["/usr/bin/strip", "-s", extension])
+
 
     def run_docker(self, version, extdir, cores_count):
-        if os.environ.get("NO_DOCKER_BUILD"):
+        if os.environ.get("NO_DOCKER_BUILD", "False").lower() in ('true', '1'):
+            print("WARNING - Skipping Docker build due to NO_DOCKER_BUILD env var")
             return
 
+        print("Running Docker build")
         if "--python-tag" in sys.argv:
             tag = sys.argv[sys.argv.index("--python-tag") + 1]
             python_version = tag[2] + "." + tag[3:]
@@ -140,10 +134,8 @@ if "--python-tag" in sys.argv:
     class bdist_wheel(_bdist_wheel):
         user_options = _bdist_wheel.user_options + [
             ("archive=", None, "If set (--archive=1), will archive non-stripped binaries to `archive_path`"),
-            ("archive-path=", None, "Path to archive wheels and non-stripped binaries to. "
-                                    "Under this path, a new directory will be created for the version and under "
-                                    "the version directory two new directories will be created: "
-                                    "`archives` and `wheels`")
+            ("archive-path=", None, "Path to archive non-stripped binaries to. "
+                                    "Under this path, a new directory will be created for the version. ")
         ]
 
         def initialize_options(self):
@@ -156,7 +148,10 @@ if "--python-tag" in sys.argv:
             global ARCHIVE_PATH, ARCHIVE
             ret = _bdist_wheel.finalize_options(self)
             ARCHIVE = self.archive
-            ARCHIVE_PATH = self.archive_path
+            if ARCHIVE:
+                python, abi, plat = self.get_tag()
+                ARCHIVE_PATH = os.path.join(self.archive_path, config["version"], python, abi, plat)
+                os.makedirs(ARCHIVE_PATH, exist_ok=True)
             return ret
 
         def get_tag(self):
