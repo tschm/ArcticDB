@@ -1,8 +1,12 @@
 def pytags = []
-if (env.BRANCH_NAME.startsWith('release-') || env.BRANCH_NAME == 'master') {
+if (env.BRANCH_NAME.startsWith('release-')) {
     pytags = ['cp36', 'cp37', 'cp38', 'cp39', 'cp310']
+    archive_path = "" // use default in /data/team/data/arctic_native/external_releases
+    git_tag = "--git-tag"
 } else {
     pytags = ['cp36', 'cp310']
+    archive_path = "--archive /tmp/arcticdb"
+    git_tag = ""
 }
 def tasks = [:]
 
@@ -27,7 +31,7 @@ try {
                         | pegasus create ./venv  # using it for newer grpcio-tools
                         | pip install -i https://repo.prod.m/artifactory/api/pypi/external-pypi/simple 'grpcio-tools<=1.48.2' 'grpcio<=1.48.2'
                         | pip install Cython wheel twine
-                        | python ./scripts/public_release.py --archive /tmp/arcticdb --py-tags ${pytag}
+                        | python ./scripts/public_release.py ${archive_path} ${git_tag} --py-tags ${pytag}
                         """.stripMargin()
                         stash name: "wheel-${pytag}", includes: 'dist/*.whl'
                     }
