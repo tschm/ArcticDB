@@ -1,4 +1,10 @@
 pytest
+pytest-cpp
+pytest-timeout
+mock
+kafka-python
+kazoo
+hypothesis
 pandas
 numpy
 boto3

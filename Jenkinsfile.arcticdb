@@ -78,11 +78,15 @@ try {
                     |cat >script_${pytag}.sh <<END
                     |set -xe
                     |mkdir -p /tmp/tests/integration
-                    |cp /workspace/arcticdb_link/python/tests/conftest.py /workspace/arcticdb_link/python/tests/integration/arcticdb/test_arctic.py /tmp/tests/
                     |/opt/python/${pytag}*/bin/pip install --trusted-host repo.prod.m -i http://repo.prod.m/artifactory/api/pypi/external-pypi/simple -U pip
                     |/opt/python/${pytag}*/bin/pip install --trusted-host repo.prod.m -i http://repo.prod.m/artifactory/api/pypi/external-pypi/simple /workspace/wheelhouse/*${pytag}*.whl -r /workspace/test-requirements.txt
-                    |cd /tmp/  # make sure we are not inside the code directory
-                    |/opt/python/${pytag}*/bin/pip install --trusted-host repo.prod.m -i http://repo.prod.m/artifactory/api/pypi/external-pypi/simple -U grpcio grpcio-tools protobuf
+                    |/opt/python/${pytag}*/bin/pip install --trusted-host repo.prod.m -i http://repo.prod.m/artifactory/api/pypi/external-pypi/simple -U grpcio grpcio-tools protobuf wheel
+                    |cd /workspace/arcticdb_link/
+                    |/opt/python/${pytag}*/bin/python setup.py protoc
+                    |cd python
+                    |/opt/python/${pytag}*/bin/pytest tests
+                    |cd /tmp/  # make sure we are not inside the code directory and run the smoke test
+                    |cp /workspace/arcticdb_link/python/tests/conftest.py /workspace/arcticdb_link/python/tests/integration/arcticdb/test_arctic.py /tmp/tests/
                     |/opt/python/${pytag}*/bin/pytest tests
                     |END
                     |sudo docker run --entrypoint bash -v \$(pwd):/workspace releases-docker.repo.prod.m/man/base/manylinux2014_x86_64:2021-11-28-06a91ec /workspace/script_${pytag}.sh
