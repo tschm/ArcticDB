@@ -75,6 +75,9 @@ class CMakeBuild(build_ext):
             shutil.copy(so_file, ARCHIVE_PATH)
             assert os.path.isfile(os.path.join(ARCHIVE_PATH, so_file))
 
+        if os.environ.get("NO_STRIP_SYMBOLS", "False").lower() in ('true', '1'):
+            print("WARNING - Skipping symbol stripping due to NO_STRIP_SYMBOLS env var")
+            return
         print("Stripping symbols")
         subprocess.check_call(["/usr/bin/strip", "-s", extension])
 
@@ -177,12 +180,18 @@ else:
     raise ValueError("Must include --python-tag in build arguments. "
                      "Valid options are cp36, cp37, cp38, cp39, cp310.")
 
+
+def readme():
+    with open("arcticdb_link/README.md") as f:
+        return f.read()
+
 if __name__ == "__main__":
     result = setup(
         ext_modules=[CMakeExtension("arcticdb_ext")],
         package_dir={"": "arcticdb_link/python"},
         packages=find_packages(where="arcticdb_link/python", exclude=["tests", "tests.*"]),
         package_data={'arcticdb': ['NOTICE.txt']},
+        long_description=readme(),
         cmdclass=dict(
             build_ext=CMakeBuild,
             bdist_wheel=bdist_wheel,
