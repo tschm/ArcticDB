@@ -1,10 +1,8 @@
-def pytags = []
+def pytags = ['cp36', 'cp37', 'cp38', 'cp39', 'cp310']
 if (env.BRANCH_NAME.startsWith('release-')) {
-    pytags = ['cp36', 'cp37', 'cp38', 'cp39', 'cp310']
     archive_path = "" // use default in /data/team/data/arctic_native/external_releases
     git_tag = "--git-tag"
 } else {
-    pytags = ['cp36', 'cp310']
     archive_path = "--archive /tmp/arcticdb"
     git_tag = ""
 }
