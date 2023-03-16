@@ -192,6 +192,7 @@ if __name__ == "__main__":
         packages=find_packages(where="arcticdb_link/python", exclude=["tests", "tests.*"]),
         package_data={'arcticdb': ['NOTICE.txt']},
         long_description=readme(),
+        long_description_content_type="text/markdown",
         cmdclass=dict(
             build_ext=CMakeBuild,
             bdist_wheel=bdist_wheel,
