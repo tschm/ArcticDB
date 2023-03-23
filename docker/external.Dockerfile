@@ -22,24 +22,15 @@ RUN bash -c 'mkdir /opt/pythons/3.{7,6,8,9,10}.0/install'
 
 RUN yum install -y libffi libffi-devel bzip2-devel
 
-RUN withproxy wget -O /tmp/openssl-1.1.1.tar.gz https://ftp.openssl.org/source/old/1.1.1/openssl-1.1.1.tar.gz
-RUN tar -C /tmp -xvf /tmp/openssl-1.1.1.tar.gz
-RUN mkdir /tmp/ssl11
-RUN mkdir /tmp/ssl11dir
-WORKDIR /tmp/openssl-1.1.1
-RUN bash -c './config --prefix=/tmp/ssl11 --openssldir=/tmp/ssl11dir'
-RUN bash -c 'make -j 4'
-RUN bash -c 'make install'
-
 RUN bash -c 'cd /opt/pythons/3.6.0; ./configure --prefix /opt/pythons/3.6.0/install; make -j 4; make altinstall'
 RUN bash -c 'cd /opt/pythons/3.7.0; ./configure --prefix /opt/pythons/3.7.0/install; make -j 4; make altinstall'
 RUN bash -c 'cd /opt/pythons/3.8.0; ./configure --prefix /opt/pythons/3.8.0/install; make -j 4; make altinstall'
 RUN bash -c 'cd /opt/pythons/3.9.0; ./configure --prefix /opt/pythons/3.9.0/install; make -j 4; make altinstall'
-RUN bash -c 'cd /opt/pythons/3.10.0; ./configure --with-openssl=/tmp/ssl11 --with-openssl-rpath=auto --prefix /opt/pythons/3.10.0/install; make -j 4; make altinstall'
+RUN bash -c 'cd /opt/pythons/3.10.0; ./configure --with-openssl=/usr/local --with-openssl-rpath=auto --prefix /opt/pythons/3.10.0/install; make -j 4; make altinstall'
 
-run bash -c 'ln -s /opt/pythons/3.8.0/install/include/python3.8 /opt/pythons/3.8.0/install/include/python3.8m'
-run bash -c 'ln -s /opt/pythons/3.9.0/install/include/python3.9 /opt/pythons/3.9.0/install/include/python3.9m'
-run bash -c 'ln -s /opt/pythons/3.10.0/install/include/python3.10 /opt/pythons/3.10.0/install/include/python3.10m'
+RUN bash -c 'ln -s /opt/pythons/3.8.0/install/include/python3.8 /opt/pythons/3.8.0/install/include/python3.8m'
+RUN bash -c 'ln -s /opt/pythons/3.9.0/install/include/python3.9 /opt/pythons/3.9.0/install/include/python3.9m'
+RUN bash -c 'ln -s /opt/pythons/3.10.0/install/include/python3.10 /opt/pythons/3.10.0/install/include/python3.10m'
 
 RUN chmod 777 -R /opt/pythons/3*
 
