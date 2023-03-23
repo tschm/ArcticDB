@@ -1,3 +1,4 @@
 LICENSE.txt
 NOTICE.txt
-
+build/*
+venv/*
