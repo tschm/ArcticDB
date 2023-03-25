@@ -16,6 +16,10 @@ case "$1" in
         version=$1
         shift
         ;;
+    "manylinux")
+        version=$1
+        shift
+        ;;
 esac
 
 map_src=${PWD}
@@ -90,7 +94,7 @@ echo "$interactive"
 
 IN_MB=${MB_SETUP_PY:-}
 if [[ -z ${IN_MB} ]]; then
-  sudo docker run -e LOCAL_USER_ID=$(id -u $USER) $interactive_args $env_vars -v $map_src:/opt/arcticdb \
+  docker run -e LOCAL_USER_ID=$(id -u $USER) $interactive_args $env_vars -v $map_src:/opt/arcticdb \
       -v /apps/research/tools/mongo/3.4.13_el7:/opt/mongo \
       -v /apps/research/tools/:/apps/research/tools/:ro \
       --privileged $interactive $image "$@"

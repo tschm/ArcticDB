@@ -1,0 +1,2 @@
+base_image=external-sandbox.docker.dev.ahl/ghcr.io/man-group/cibuildwheel_manylinux:2.12.1
+build_image=external-sandbox.docker.dev.ahl/ghcr.io/man-group/cibuildwheel_manylinux:2.12.1

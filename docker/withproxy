@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# A convenience shell script for accessing the Internet through our proxy.
+#
+# INSTALLATION
+#
+# Ensure /apps/research/tools/bin is on your PATH:
+#
+# $ echo 'export PATH=/apps/research/tools/bin:$PATH' >> ~/.bashrc
+#
+# USAGE
+#
+# Assuming that withproxy is now in a directory on your PATH, you can
+# call it directly:
+#
+# $ withproxy wget http://www.example.com
+
+# Stop on any errors.
+set -e
+
+# Some binaries, such as curl on OS X, do a DNS lookup for the AAAA
+# record. However, the DNS servers don't currently support AAAA
+# requests, so we just time out after five seconds.
+#
+# We work around this by manually looking up the IP and explicitly using that.
+proxy_ip=euro-webproxy.drama.man.com
+if [[ -n $(type -P dig) ]]
+then
+    proxy_ip=$(dig +short euro-webproxy.drama.man.com @10.192.207.245 A)
+fi
+proxy_port=8080
+
+# Lots of variations for git/bower/npm etc.
+export http_proxy="http://$proxy_ip:$proxy_port"
+export HTTP_PROXY=$http_proxy
+export https_proxy="http://$proxy_ip:$proxy_port"
+export HTTPS_PROXY=$https_proxy
+export ftp_proxy=$http_proxy
+export FTP_PROXY=$HTTP_PROXY
+
+# See http://ahljira/browse/ILB-9624
+export no_proxy='127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.ahl,.frm,.glg,.m,.maninvestments.com,.num,.qarl,.gpm'
+export NO_PROXY=$no_proxy
+
+if [[ -f /usr/lib/os-release ]]; then
+    PLATFORM=$( . /usr/lib/os-release && echo "${NAME,,}_${VERSION_ID,,}" )
+    if [[ ${PLATFORM} == "ubuntu_22.04" && -f /apps/research/tools/withproxy/openssl.conf ]]; then
+        export OPENSSL_CONF=/apps/research/tools/withproxy/openssl.conf
+    fi
+fi
+
+exec "$@"

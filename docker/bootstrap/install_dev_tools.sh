@@ -2,20 +2,20 @@
 
 set -euo pipefail
 
-source /etc/profile.d/cxx_profile.sh
+source /opt/bootstrap/cxx_profile.sh
 source /opt/bootstrap/util.sh
 
 # This only deals with dependencies for running interactive IDE clion from inside 
 # the container.
 
-yum install -y libXtst oracle-jdk-8u131-1.8.0_131-1.ahl libXext libXrender libXtst xhost freetype fontconfig
+yum install -y libXtst libXext libXrender libXtst xhost freetype fontconfig wget
 yum clean all 
 
-#https://download.jetbrains.com/cpp/CLion-183.3283.6.tar.gz
+#https://download-cdn.jetbrains.com/cpp/CLion-2022.3.3.tar.gz
 
 mkpushd /tmp/clion
-    clion_version=2021.2
-    pxy wget --quiet https://download.jetbrains.com/cpp/CLion-${clion_version}.tar.gz
+    clion_version=2022.3.3
+    pxy wget https://download.jetbrains.com/cpp/CLion-${clion_version}.tar.gz
     tar -xvf CLion-${clion_version}.tar.gz
     pushd clion-${clion_version}
         mkdir /opt/clion
