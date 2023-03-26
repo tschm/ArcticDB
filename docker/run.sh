@@ -30,6 +30,7 @@ image="$build_image"
 echo "Running $image"
 
 # Activate interactive mode in tty only
+interactive="--rm"
 if [[ $- == *i* ]] || [[ "${INTERACTIVE:-0}" == "1" ]]
 then 
     if [ -z ${NO_X11+x} ];
@@ -39,6 +40,7 @@ then
     else
         interactive_args=""
     fi
+    interactive="-it"
 fi
 
 if [[ ! -v DEBUG_BUILD ]]; then
