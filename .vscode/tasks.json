@@ -7,7 +7,7 @@
         "command": "bash",
         "args": [
           "-c",
-          "'/opt/arcticc/docker/vscode/install_python_libs.sh && /opt/arcticc/docker/vscode/install_extensions.sh'"
+          "'/opt/arcticdb/docker/vscode/install_python_libs.sh && /opt/arcticdb/docker/vscode/install_extensions.sh'"
         ],
         "group": "build",
         "presentation": {

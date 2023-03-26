@@ -12,7 +12,7 @@ from_latest=${4:-""}
 [[ "${local_only}" == "local" ]] && echo "Local only build. Not going to push images"
 
 function usage(){
-    echo "buildimg.sh <mode> <version> where mode in {build,external}, version in {36,38,medusa}"
+    echo "buildimg.sh <mode> <version> where mode in {build,external}, version in {36,38,medusa, manylinux}"
 }
 
 case $version in
@@ -103,13 +103,28 @@ case $mode in
     docker push $tag_latest
     ;;
 "manylinux")
-    echo "Creating manylinux build container"
+    echo "Creating manylinux Man build container"
 
     source ${version}.versions
+    image_prefix="$build_image_prefix"
     dockerfile="manylinux.Dockerfile"
 
     cp /apps/research/tools/bin/withproxy .
-    docker build . -f $dockerfile --build-arg IMGTAG="$base_image"
+    docker build . -f $dockerfile --build-arg IMGTAG="$github_base_image" -t arcticdb-manylinuxman
+
+    ts="$(date '+%s')"
+    tag=$(tag_img manylinuxman $ts none)
+    tag_latest=$(tag_img manylinuxman latest none)
+
+    echo $tag | tee manylinuxman_tag.$version.tmp
+    echo $tag_latest
+    docker tag arcticdb-manylinuxman $tag
+    docker tag arcticdb-manylinuxman $tag_latest
+    
+    [[ "${local_only}" == "local" ]] && exit 0
+
+    docker push $tag
+    docker push $tag_latest
     ;;
 *)
     usage
