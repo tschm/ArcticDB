@@ -1,4 +1,3 @@
 {
-    "cmake.sourceDirectory": "${workspaceFolder}/arcticdb_link/cpp",
-    "cmake.cmakePath": "/opt/arcticc/start_cmake.sh"
+    "cmake.sourceDirectory": "${workspaceFolder}/arcticdb_link/cpp"
 }
