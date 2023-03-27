@@ -31,6 +31,7 @@ echo "Running $image"
 
 # Activate interactive mode in tty only
 interactive="--rm"
+interactive_args=""
 if [[ $- == *i* ]] || [[ "${INTERACTIVE:-0}" == "1" ]]
 then 
     if [ -z ${NO_X11+x} ];
