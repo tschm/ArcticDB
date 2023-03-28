@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "type": "shell",
+        "label": "CONTAINER SETUP - install vscode extensions & Python virtual env",
+        "command": "bash",
+        "args": [
+          "-c",
+          "'/opt/arcticdb/docker/vscode/install_python_libs.sh && /opt/arcticdb/docker/vscode/install_extensions.sh'"
+        ],
+        "group": "build",
+        "presentation": {
+          "reveal": "always",
+          "panel": "new"
+        },
+        "problemMatcher": "$gcc"
+      }
+    ]
+  }

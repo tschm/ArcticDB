@@ -12,7 +12,7 @@ from_latest=${4:-""}
 [[ "${local_only}" == "local" ]] && echo "Local only build. Not going to push images"
 
 function usage(){
-    echo "buildimg.sh <mode> <version> where mode in {build,external}, version in {36,38,medusa}"
+    echo "buildimg.sh <mode> <version> where mode in {build,external}, version in {36,38,medusa, manylinux}"
 }
 
 case $version in
@@ -20,16 +20,21 @@ case $version in
     pegasus_version="3.6"
     pegasus_image="man-pegasus-current"
     image_prefix="pre-releases-docker.repo.prod.m/man/app/pegcxx"
+    dockerfile="Dockerfile"
   ;;
 "38")
     pegasus_version="3.8"
     pegasus_image="man-pegasus-next"
     image_prefix="pre-releases-docker.repo.prod.m/man/app/pegcxx"
+    dockerfile="Dockerfile"
 ;;
 "medusa")
     pegasus_version="36-1"
     pegasus_image="man-medusa-python"
     image_prefix="pre-releases-docker.repo.prod.m/man/app/36-1/medcxx-36-1"
+    dockerfile="Dockerfile"
+;;
+"manylinux")
 ;;
 *)
     usage
@@ -57,8 +62,7 @@ case $mode in
     rm -f tls-ca-bundle.pem
     cp /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem .
 
-    dockerfile="Dockerfile"
-    sudo docker build . -f $dockerfile --build-arg PEG_VERSION=$pegasus_version --build-arg PEG_IMAGE=$pegasus_image -t arcticc-build-$version
+    docker build . -f $dockerfile --build-arg PEG_VERSION=$pegasus_version --build-arg PEG_IMAGE=$pegasus_image -t arcticc-build-$version
 
     [[ "${local_only}" == "local" ]] && exit 0
 
@@ -67,10 +71,10 @@ case $mode in
     tag_latest=$(tag_img build latest $version)
 
     echo $tag | tee build_tag.$version.tmp
-    sudo docker tag arcticc-build-$version $tag
-    sudo docker tag arcticc-build-$version $tag_latest
-    sudo docker push $tag
-    sudo docker push $tag_latest
+    docker tag arcticc-build-$version $tag
+    docker tag arcticc-build-$version $tag_latest
+    docker push $tag
+    docker push $tag_latest
     ;;
 "external")
     echo "Creating external container"
@@ -83,7 +87,7 @@ case $mode in
 
     dockerfile="external.Dockerfile"
     cp /apps/research/tools/bin/withproxy .
-    sudo docker build . -f $dockerfile --build-arg IMGTAG="$build_image" -t arcticc-external
+    docker build . -f $dockerfile --build-arg IMGTAG="$build_image" -t arcticc-external
 
     [[ "${local_only}" == "local" ]] && exit 0
 
@@ -93,10 +97,34 @@ case $mode in
 
     echo $tag | tee external_tag.$version.tmp
     echo $tag_latest
-    sudo docker tag arcticc-external $tag
-    sudo docker tag arcticc-external $tag_latest
-    sudo docker push $tag
-    sudo docker push $tag_latest
+    docker tag arcticc-external $tag
+    docker tag arcticc-external $tag_latest
+    docker push $tag
+    docker push $tag_latest
+    ;;
+"manylinux")
+    echo "Creating manylinux Man build container"
+
+    source ${version}.versions
+    image_prefix="$build_image_prefix"
+    dockerfile="manylinux.Dockerfile"
+
+    cp /apps/research/tools/bin/withproxy .
+    docker build . -f $dockerfile --build-arg IMGTAG="$github_base_image" -t arcticdb-manylinuxman
+
+    ts="$(date '+%s')"
+    tag=$(tag_img manylinuxman $ts none)
+    tag_latest=$(tag_img manylinuxman latest none)
+
+    echo $tag | tee manylinuxman_tag.$version.tmp
+    echo $tag_latest
+    docker tag arcticdb-manylinuxman $tag
+    docker tag arcticdb-manylinuxman $tag_latest
+    
+    [[ "${local_only}" == "local" ]] && exit 0
+
+    docker push $tag
+    docker push $tag_latest
     ;;
 *)
     usage

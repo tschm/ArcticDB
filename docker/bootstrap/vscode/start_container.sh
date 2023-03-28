@@ -6,7 +6,7 @@ version=36
 port=2222
 
 usage () {
-    echo "USAGE: Pass version (36, 38 or medusa) + optional port number (defaults to 2222). "
+    echo "USAGE: Pass version (36, 38, medusa or manylinux) + optional port number (defaults to 2222). "
     echo "E.g. ./start_container.sh 36 2223"
     exit 1
 }
@@ -32,6 +32,10 @@ case "$1" in
         version=$1
         shift
         ;;
+    "manylinux")
+        version=$1
+        shift
+        ;;
     *)
         usage
         shift
@@ -39,13 +43,8 @@ case "$1" in
 esac
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-source ${SCRIPT_DIR}/../${version}.versions
-if [ "${1:-}" == "external" ]; then
-    image="$external_image"
-    shift
-else
-    image="$build_image"
-fi
+source ${SCRIPT_DIR}/../../${version}.versions
+image="$build_image"
 
 # Test authorized_keys exists
 if [ ! -f "$HOME/.ssh/authorized_keys" ]; then
@@ -61,10 +60,11 @@ fi
 
 map_src=${SCRIPT_DIR}/../../
 
-CMD="ln -s /tmp/.gitconfig /home/user/.gitconfig; ln -s /tmp/.ssh /home/user/.ssh; dropbear -w -g -R -F -E -p $port"
+CMD="ln -s /tmp/.gitconfig /root/.gitconfig; ln -s /tmp/.ssh /root/.ssh; dropbear -R -F -E -p $port"
 
-sudo docker run -e LOCAL_USER_ID=$(id -u $USER) \
-    -v $map_src:/opt/arcticc \
+# Port 17815 used as default by remotery profiling tool
+docker run \
+    -v $map_src:/opt/arcticdb \
     -v $HOME/.ssh:/tmp/.ssh:ro \
     -v $HOME/.gitconfig:/tmp/.gitconfig \
     -v /apps/research/tools/mongo/3.4.13_el7:/opt/mongo \
@@ -73,5 +73,8 @@ sudo docker run -e LOCAL_USER_ID=$(id -u $USER) \
     -v /apps/research/tools/bin/withproxy:/usr/bin/withproxy \
     -v /apps/research/tools/git/git-lfs/2.3.4/git-lfs:/usr/bin/git-lfs \
     -v /scratch/data/vscode/:/scratch/data/vscode \
+    -v /scratch/data/vcpkg_cache:/scratch/data/vcpkg_cache \
+    -p 17815:17815 \
     -p "${port}:${port}" \
+    -it \
     --privileged $image bash -c "$CMD"
