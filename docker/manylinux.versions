@@ -1,4 +1,4 @@
 github_base_image=external-sandbox.docker.dev.ahl/ghcr.io/man-group/cibuildwheel_manylinux:2.12.1
 
 build_image_prefix=pre-releases-docker.repo.prod.m/man/app/base/arcticdb_manylinux
-build_image=releases-docker.repo.prod.m/man/app/base/arcticdb_manylinux-none:manylinuxman-1679837196
+build_image=releases-docker.repo.prod.m/man/app/base/arcticdb_manylinux-none:manylinuxman-1680256957

@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "buildPresets": [
+    {"name": "build-debug",        "configurePreset": "linux-debug",        "targets": "arcticdb_ext", "jobs": 20 },
+    {"name": "build-release",      "configurePreset": "linux-release",      "targets": "arcticdb_ext", "jobs": 20 }
+  ]
+}

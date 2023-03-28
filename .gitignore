@@ -1,5 +1,9 @@
 LICENSE.txt
 NOTICE.txt
 build/*
-venv/*
+venv
 .gitmodules
+.idea
+docker/certificate_authorities
+docker/withproxy
+docker/manylinuxman_tag.manylinux.tmp

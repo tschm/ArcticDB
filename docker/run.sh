@@ -41,6 +41,9 @@ then
     else
         interactive_args=""
     fi
+    if [ "$version" == "manylinux" ]; then
+        interactive_args="$interactive_args -v /apps/research/tools/etc/gitconfig:/usr/local/etc/gitconfig -v ${HOME}/.gitconfig:/root/.gitconfig -v ${HOME}/.ssh:/root/.ssh"
+    fi
     interactive="-it"
 fi
 
@@ -61,9 +64,6 @@ if [[ ! -v CMAKE_BUILD_TYPE ]]; then
 else
     env_vars="-e CMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $env_vars"
 fi
-
-echo "$env_vars"
-echo "$interactive"
 
 IN_MB=${MB_SETUP_PY:-}
 if [[ -z ${IN_MB} ]]; then
