@@ -3,24 +3,21 @@
 set -euo pipefail
 
 source /opt/bootstrap/cxx_profile.sh
-source /opt/bootstrap/util.sh
 
 # This only deals with dependencies for running interactive IDE clion from inside 
 # the container.
 
-yum install -y libXtst libXext libXrender libXtst xhost freetype fontconfig wget
-yum clean all 
+yum install -y libXtst libXext libXrender libXtst xhost freetype fontconfig wget valgrind vim less zsh xclip
+yum clean all
 
-#https://download-cdn.jetbrains.com/cpp/CLion-2022.3.3.tar.gz
+#https://download.jetbrains.com/cpp/CLion-2023.1.tar.gz
 
-mkpushd /tmp/clion
-    clion_version=2022.3.3
-    pxy wget https://download.jetbrains.com/cpp/CLion-${clion_version}.tar.gz
-    tar -xvf CLion-${clion_version}.tar.gz
-    pushd clion-${clion_version}
-        mkdir /opt/clion
-        mv ./* /opt/clion
-    popd
+pushd /opt
+    clion_version=2023.1
+    curl -L https://download.jetbrains.com/cpp/CLion-${clion_version}.tar.gz -o clion.tgz
+    tar -xzf clion.tgz
+    rm clion.tgz
+    mv clion-${clion_version} clion
 popd
 
-rm -rf /tmp/clion
+echo "alias clion='/opt/clion/bin/clion.sh > /dev/null 2>&1'" >> /root/.bashrc

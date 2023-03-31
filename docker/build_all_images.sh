@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # build the build containers
+./buildimg.sh manylinux manylinux not-local
+
 ./buildimg.sh build 36 not-local
 ./buildimg.sh external 36 not-local from_latest
 
@@ -10,6 +12,10 @@
 ./buildimg.sh external medusa not-local from_latest
 
 # retag in to .new files
+cp manylinux.versions manylinux.versions.new
+tag=`/usr/bin/grep -oP ":\K[\w-]+" manylinuxman_tag.manylinux.tmp`
+sed -i "s/build_tag=.*/build_tag=${tag}/" manylinux.versions.new
+
 cp 36.versions 36.versions.new
 tag=`/usr/bin/grep -oP ":\K[\w-]+" build_tag.36.tmp`
 sed -i "s/build_tag=.*/build_tag=${tag}/" 36.versions.new

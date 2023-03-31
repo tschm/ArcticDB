@@ -110,7 +110,12 @@ case $mode in
     dockerfile="manylinux.Dockerfile"
 
     cp /apps/research/tools/bin/withproxy .
-    docker build . -f $dockerfile --build-arg IMGTAG="$github_base_image" -t arcticdb-manylinuxman
+    mkdir -p certificate_authorities
+    cp /usr/local/share/ca-certificates/man/* certificate_authorities
+    requirements=$(grep -Po "  .*" ../arcticdb_link/setup.cfg | grep -v '#' | grep -v ':' | cut -d';' -f1)
+    docker build . -f $dockerfile --build-arg IMGTAG="$github_base_image" --build-arg REQUIREMENTS="$requirements" -t arcticdb-manylinuxman
+
+    rm -rf certificate_authorities withproxy
 
     ts="$(date '+%s')"
     tag=$(tag_img manylinuxman $ts none)
