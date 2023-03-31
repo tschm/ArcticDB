@@ -44,7 +44,7 @@ then
         interactive_args=""
     fi
     if [ "$version" == "manylinux" ]; then
-        interactive_args="$interactive_args -v /apps/research/tools/etc/gitconfig:/usr/local/etc/gitconfig -v ${HOME}/.gitconfig:/root/.gitconfig -v ${HOME}/.ssh:/root/.ssh"
+        interactive_args="$interactive_args -v /apps/research/tools/etc/gitconfig:/usr/local/etc/gitconfig -v ${HOME}/.gitconfig:/root/.gitconfig -v ${HOME}/.ssh:/root/.ssh -v ${HOME}/.cache/JetBrains:/root/.cache/JetBrains -v ${HOME}/.config/JetBrains:/root/.config/JetBrains -v ${HOME}/.local/share/JetBrains:/root/.local/share/JetBrains"
     fi
     interactive="-it"
 fi
