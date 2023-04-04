@@ -60,7 +60,12 @@ fi
 
 map_src=${SCRIPT_DIR}/../../
 
-CMD="ln -s /tmp/.gitconfig /root/.gitconfig; ln -s /tmp/.ssh /root/.ssh; dropbear -R -F -E -p $port"
+CMD="ln -s /tmp/.gitconfig /root/.gitconfig;\
+ln -s /tmp/.ssh /root/.ssh;\
+echo 'export PATH=/opt/rh/devtoolset-10/root/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$PATH' >> /root/.bash_profile;\
+echo 'export VCPKG_DEFAULT_BINARY_CACHE=/scratch/data/vcpkg_cache' >> /root/.bashrc;\
+dropbear -R -F -E -p $port;
+"
 
 # Port 17815 used as default by remotery profiling tool
 docker run \
@@ -77,4 +82,5 @@ docker run \
     -p 17815:17815 \
     -p "${port}:${port}" \
     -it \
+    --entrypoint= \
     --privileged $image bash -c "$CMD"
