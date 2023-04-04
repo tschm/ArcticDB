@@ -32,7 +32,7 @@ RUN python -m venv /root/venv
 RUN \
 source /root/venv/bin/activate && \
 /opt/bootstrap/withproxy pip --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org install --upgrade pip && \
-/opt/bootstrap/withproxy pip --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org install ${REQUIREMENTS}
+/opt/bootstrap/withproxy pip --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org install -U setuptools ${REQUIREMENTS}
 
 # git completion
 RUN curl https://raw.githubusercontent.com/git/git/master/contrib/completion/git-completion.bash -o /root/.git-completion.bash

@@ -17,7 +17,6 @@ if [[ "$@" =~ python.* ]]; then
     elif [[ "$JOB_NAME" =~ .*pegasus/current.* ]]; then
         source docker/36.versions
     else
-        # medusa
         source docker/medusa.versions
     fi
 
