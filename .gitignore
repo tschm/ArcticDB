@@ -7,3 +7,21 @@ venv
 docker/certificate_authorities
 docker/withproxy
 docker/manylinuxman_tag.manylinux.tmp
+### manbuild cruft
+*.egg-info
+*.pyc
+.coverage.*
+.gradle/*
+Dockerfile.mb_*
+__pycache__/*
+build/*
+dist/*
+dist_release/*
+dockerfile.mb*
+*.mb_log
+db_clone/*
+.coveragerc
+all_requirements.txt
+build_requirements.txt
+junit-tests-*.xml
+
