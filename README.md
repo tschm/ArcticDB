@@ -37,7 +37,7 @@ It redirects Python imports from `arcticc` and `arcticcxx` to their replacements
 `arcticdb` and `arcticdb_ext`.
 
 The build also runs tests against the `arcticdb` wheel that Man grabs
-(from PyPi)[https://mangit.maninvestments.com/projects/CORE/repos/external-python/browse/external-packages.yaml].
+[from PyPi](https://mangit.maninvestments.com/projects/CORE/repos/external-python/browse/external-packages.yaml).
 These are:
 
 - The ArcticDB tests themselves, to check compatibility with Man's Python package pins.
@@ -46,15 +46,14 @@ These are:
 
 ### TODO
 
-- Set this repository up as a Python package.
 - Set up Pegasus-next Jenkins build that installs ArcticDB and `man.arcticdb`.
 - Run ArcticDB tests in Jenkins build (involves pulling the tagged sources).
 - Add simple API compat tests.
-- Implement the shim. Note that some code eg these (creds)[https://mangit.maninvestments.com/projects/DATA/repos/arcticc/browse/arcticc/config.py#57-60)
+- Implement the shim. Note that some code eg these [creds](https://mangit.maninvestments.com/projects/DATA/repos/arcticc/browse/arcticc/config.py#57-60)
 have not survived the move and we need to do something about them to keep existing `arcticc` consumers happy.
 - Extend API compat tests.
 - Add nonreg tests.
-- Replace `arcticc` (dependencies)[https://docs.maninvestments.com/core/packages/internal/arcticc/]
+- Replace `arcticc` [dependencies](https://docs.maninvestments.com/core/packages/internal/arcticc/)
 in Man Group with `man.arcticdb` dependencies.
 
 Remember to add merge checks to this repo.
