@@ -46,7 +46,6 @@ These are:
 
 ### TODO
 
-- Set this repository up as a Python package.
 - Set up Pegasus-next Jenkins build that installs ArcticDB and `man.arcticdb`.
 - Run ArcticDB tests in Jenkins build (involves pulling the tagged sources).
 - Add simple API compat tests.
