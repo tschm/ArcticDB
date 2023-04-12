@@ -1,0 +1,7 @@
+# Remove unhelpful aliases defined by  manylinux base .bashrc
+unalias rm cp mv
+
+alias clion='/opt/clion/bin/clion.sh > /dev/null 2>&1'
+
+source /root/.git-completion.bash
+alias git="withproxy git"

@@ -4,7 +4,15 @@
 
 Due to Docker [layers](https://docs.docker.com/storage/storagedriver/#images-and-layers) builds
 only do work for the changed layer of the `Dockerfile` downwards, so if possible update later layers
-in preference to earlier ones.
+in preference to earlier ones. In particular, `install_dev_tools.sh` takes a long time as it has to download CLion through our file-scanning man-in-the-middle proxy.
+
+## Dev Process
+
+To iterate on the docker image locally:
+ * Set `img_prefix=arcticdb-manylinuxman` and `build_tag=latest` in `manylinux.versions`
+ * Make changes to the Dockerfile, entrypoint script, etc
+ * From the `docker` directory, run `./buildimg.sh`
+ * Run the built image from the `man.arcticdb` root directory as usual with `INTERACTIVE=1 docker/run.sh manylinux`
 
 ## Release Process
 
@@ -19,7 +27,7 @@ Build and push to pre-releases:
 
 ```
 ./build_and_push.sh
-rename ".new" "" *.new  # Create new manylinux.versions file
+mv manylinux.versions.new manylinux.versions
 # Now commit and push the new manylinux.versions file
 ```
 
