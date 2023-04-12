@@ -32,6 +32,7 @@ image="$build_image"
 echo "Running $image"
 
 # Activate interactive mode in tty only
+env_vars=""
 interactive="--rm"
 interactive_args=""
 if [[ $- == *i* ]] || [[ "${INTERACTIVE:-0}" == "1" ]]
@@ -44,26 +45,31 @@ then
         interactive_args=""
     fi
     if [ "$version" == "manylinux" ]; then
-        interactive_args="$interactive_args -v /apps/research/tools/etc/gitconfig:/usr/local/etc/gitconfig -v ${HOME}/.gitconfig:/root/.gitconfig -v ${HOME}/.ssh:/root/.ssh -v ${HOME}/.cache/JetBrains:/root/.cache/JetBrains -v ${HOME}/.config/JetBrains:/root/.config/JetBrains -v ${HOME}/.local/share/JetBrains:/root/.local/share/JetBrains -v ${HOME}/.ideavimrc:/root/.ideavimrc -v ${HOME}/.arcticdbzshrc:/root/.zshrc -v ${HOME}/.arcticdbvimrc:/root/.vimrc"
+        interactive_args="$interactive_args -v /apps/research/tools/etc/gitconfig:/usr/local/etc/gitconfig"
+        interactive_args="$interactive_args -v ${HOME}/.gitconfig:/root/.gitconfig"
+        interactive_args="$interactive_args -v ${HOME}/.ssh:/root/.ssh"
+        interactive_args="$interactive_args -v ${HOME}/.cache/JetBrains:/root/.cache/JetBrains"
+        interactive_args="$interactive_args -v ${HOME}/.config/JetBrains:/root/.config/JetBrains"
+        interactive_args="$interactive_args -v ${HOME}/.local/share/JetBrains:/root/.local/share/JetBrains"
+        interactive_args="$interactive_args -v ${HOME}/.ideavimrc:/root/.ideavimrc"
+        interactive_args="$interactive_args -v ${HOME}/.arcticdbzshrc:/root/.zshrc"
+        interactive_args="$interactive_args -v ${HOME}/.arcticdbvimrc:/root/.vimrc"
+        interactive_args="$interactive_args -v /run/user/$(id -u)/.vault-token:/root/.vault-token"
+        interactive_args="$interactive_args -v /etc/ahl/mongo/instances.cfg:/etc/ahl/mongo/instances.cfg"
+        env_vars="$env_vars -e VAULT_ADDR=https://vault.gb.prod.m"
     fi
     interactive="-it"
 fi
 
-if [[ ! -v DEBUG_BUILD ]]; then
-    env_vars=""
-else
+if [[ -v DEBUG_BUILD ]]; then
     env_vars="-e DEBUG_BUILD=$DEBUG_BUILD"
 fi
 
-if [[ ! -v USE_SLAB_ALLOCATOR ]]; then
-    env_vars="$env_vars"
-else
+if [[ -v USE_SLAB_ALLOCATOR ]]; then
     env_vars="-e USE_SLAB_ALLOCATOR=$USE_SLAB_ALLOCATOR $env_vars"
 fi
 
-if [[ ! -v CMAKE_BUILD_TYPE ]]; then
-    env_vars="$env_vars"
-else
+if [[ -v CMAKE_BUILD_TYPE ]]; then
     env_vars="-e CMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $env_vars"
 fi
 

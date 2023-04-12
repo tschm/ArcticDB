@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Create pegasus-current and pegasus-next venvs
+pegasus pegasus-current -d current > /dev/null 2>&1
+pegasus pegasus-next -d next > /dev/null 2>&1
+
 mkdir -p /root/.config/pip
 cat >> /root/.config/pip/pip.conf << EOF
 [global]
@@ -9,7 +13,7 @@ trusted-host = repo.prod.m
 index-url = https://repo.prod.m/artifactory/api/pypi/external-pypi/simple/
 EOF
 
-# -j20 by default
+# -j8 by default
 cd /opt/arcticdb/arcticdb_link/cpp
 ln -fs ../../docker/custom_cmakefiles/CMakeUserPresets_clion.json CMakeUserPresets.json
 
@@ -23,11 +27,11 @@ ln -fs ../cpp/out/linux-debug-build/arcticdb/arcticdb_ext.cpython-36m-x86_64-lin
 
 # This is where CLion looks by default for a Python venv, removes a few clicks
 cd /opt/arcticdb
-ln -fs /root/venv venv
+ln -fs /root/pyenvs/dev venv
 cd /opt/arcticdb/arcticdb_link
 
 # Activating the venv results in the interactive shell being falsely labelled as venv, and deactivate does not fix this
-/root/venv/bin/python setup.py protoc --build-lib python > /dev/null
+/root/pyenvs/dev/bin/python setup.py protoc --build-lib python > /dev/null 2>&1
 
 cd /opt/arcticdb
 
