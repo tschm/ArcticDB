@@ -24,7 +24,6 @@ class PatcherLoader:
         try:
             m = importlib.import_module(patched_fullname)
         except Exception as e:
-            # Re-raise, but replace any references to man.security_master with man.codex
             raise type(e)(str(e).replace(self.new_path, self.old_path))
         sys.modules[fullname] = m
         return m
