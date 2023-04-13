@@ -16,3 +16,15 @@ export MB_PYTHON_PLATFORM_NAME=pegasus
 export MB_PYTHON_PLATFORM_VERSION=3.8
 export MB_PYTHON_PLATFORM_DISTRIBUTION=next
 
+# Tests require:
+#   - Mongo `instances.cfg`
+#   - /apps/research/tools/bin/withproxy ; git clone from GitHub
+#   - /etc/krb5.conf ; K8s config for kinit
+export MB_RUN_OPTS=${MB_RUN_OPTS:-\
+    --rm \
+    -v /etc/krb5.conf:/etc/krb5.conf \
+    -v /etc/ahl/mongo/instances.cfg:/etc/ahl/mongo/instances.cfg:ro \
+    -v /apps/research/tools/bin/_common:/apps/research/tools/bin/_common \
+    -v /apps/research/tools/bin/withproxy:/apps/research/tools/bin/withproxy \
+    -v /apps/research/tools/bin/mongod:/apps/research/tools/bin/mongod \
+    -v /apps/research/tools/mongo:/apps/research/tools/mongo}

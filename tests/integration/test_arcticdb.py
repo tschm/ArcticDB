@@ -2,6 +2,7 @@ import pytest
 import subprocess
 import sys
 import os
+import shutil
 
 
 def get_arcticdb_version():
@@ -16,7 +17,7 @@ def get_arcticdb_version():
 
 def clone_arcticdb(tmp_path, version):
     version = "master"  # TODO removeme - working off master till 1.0.2 release done
-    git_args = ["withproxy", "git", "clone", "--depth", "1", "--single-branch", "-b", version, "https://github.com/man-group/ArcticDB.git", str(tmp_path)]
+    git_args = ["/apps/research/tools/bin/withproxy", "git", "clone", "--depth", "1", "--single-branch", "-b", version, "https://github.com/man-group/ArcticDB.git", str(tmp_path)]
     print("Running git clone")
     print(" ".join(git_args))
     subprocess.check_call(git_args)
@@ -27,9 +28,11 @@ def run_arcticdb_tests(tmp_path) -> int:
     clone_arcticdb(tmp_path, version)
     working_dir = os.getcwd()
     try:
-        os.chdir(os.path.join(tmp_path, "python", "tests"))
+        os.chdir(os.path.join(tmp_path, "python"))
+        shutil.rmtree("./arcticdb")  # make sure we are testing with the installed one
+        subprocess.call(["ls", "-la"])
         # TODO relax to run all tests
-        tests = os.path.join("integration", "arcticdb", "test_arctic.py")
+        tests = os.path.join("tests", "integration", "arcticdb", "test_arctic.py")
         return pytest.main(["-vs", tests])
     finally:
         os.chdir(working_dir)
