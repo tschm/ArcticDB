@@ -30,7 +30,7 @@ def run_arcticdb_tests(tmp_path) -> int:
     try:
         os.chdir(os.path.join(tmp_path, "python"))
         shutil.rmtree("./arcticdb")  # make sure we are testing with the installed one
-        subprocess.call(["ls", "-la"])
+        subprocess.call(["ls", "-la", "tests/"])
         # TODO relax to run all tests
         tests = os.path.join("tests", "integration", "arcticdb", "test_arctic.py")
         return pytest.main(["-vs", tests])
