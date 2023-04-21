@@ -56,6 +56,7 @@ then
         interactive_args="$interactive_args -v ${HOME}/.arcticdbvimrc:/root/.vimrc"
         interactive_args="$interactive_args -v /run/user/$(id -u)/.vault-token:/root/.vault-token"
         interactive_args="$interactive_args -v /etc/ahl/mongo/instances.cfg:/etc/ahl/mongo/instances.cfg"
+        interactive_args="$interactive_args -v /scratch/data/vcpkg_cache:/scratch/data/vcpkg_cache"
         env_vars="$env_vars -e VAULT_ADDR=https://vault.gb.prod.m"
     fi
     interactive="-it"
