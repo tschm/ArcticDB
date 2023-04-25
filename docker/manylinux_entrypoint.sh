@@ -35,4 +35,7 @@ cd /opt/arcticdb/arcticdb_link
 
 cd /opt/arcticdb
 
+export VCPKG_BINARY_SOURCES=nugetconfig,/opt/arcticdb/docker/nuget.config,readwrite
+export VCPKG_USE_NUGET_CACHE=1
+
 /bin/bash

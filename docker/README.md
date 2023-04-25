@@ -27,7 +27,6 @@ Build and push to pre-releases:
 
 ```
 ./build_and_push.sh
-mv manylinux.versions.new manylinux.versions
 # Now commit and push the new manylinux.versions file
 ```
 

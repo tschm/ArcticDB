@@ -1,3 +1,0 @@
-img_prefix=releases-docker.repo.prod.m/man/app/pegcxx-38
-build_tag=build-1677066404
-build_image=${img_prefix}:${build_tag}

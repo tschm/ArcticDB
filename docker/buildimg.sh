@@ -27,7 +27,7 @@ docker build . -f $dockerfile --build-arg IMGTAG="$github_base_image" --build-ar
 rm -rf certificate_authorities withproxy
 
 ts="$(date '+%s')"
-tag="${img_prefix}:${ts}"
+tag=`echo "${img_prefix}:${ts}" | sed 's/releases-/pre-releases-/'`
 
 echo $tag | tee manylinuxman_tag.tmp
 docker tag arcticdb-manylinuxman $tag
