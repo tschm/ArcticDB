@@ -1,4 +1,0 @@
-img_prefix=releases-docker.repo.prod.m/man/app/pegcxx-36
-build_tag=build-1677062494
-build_image=${img_prefix}:${build_tag}
-external_image=releases-docker.repo.prod.m/man/app/pegcxx-none:external-1677063460

@@ -76,7 +76,8 @@ fi
 
 IN_MB=${MB_SETUP_PY:-}
 if [[ -z ${IN_MB} ]]; then
-  ${docker_command} run -e LOCAL_USER_ID=$(id -u $USER) $interactive_args $env_vars -v $map_src:/opt/arcticdb \
+  ${docker_command} run -e LOCAL_USER_ID=$(id -u $USER) $interactive_args $env_vars \
+      -v $map_src:/opt/arcticdb \
       -v /apps/research/tools/mongo/3.4.13_el7:/opt/mongo \
       -v /apps/research/tools/:/apps/research/tools/:ro \
       -v /scratch/data/vcpkg_cache:/scratch/data/vcpkg_cache \

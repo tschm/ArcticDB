@@ -1,4 +1,0 @@
-img_prefix=releases-docker.repo.prod.m/man/app/36-1/medcxx-36-1
-build_tag=build-1677069610
-build_image=${img_prefix}:${build_tag}
-external_image=releases-docker.repo.prod.m/man/app/36-1/medcxx-36-1-none:external-1677070721
