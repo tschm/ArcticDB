@@ -35,7 +35,8 @@ cd /opt/arcticdb/arcticdb_link
 
 cd /opt/arcticdb
 
-export VCPKG_BINARY_SOURCES=nugetconfig,/opt/arcticdb/docker/nuget.config,readwrite
-export VCPKG_USE_NUGET_CACHE=1
+# Fails to upload to nuget. We should investigate and reinstate at some point.
+#export VCPKG_BINARY_SOURCES=nugetconfig,/opt/arcticdb/docker/nuget.config,readwrite
+#export VCPKG_USE_NUGET_CACHE=1
 
 /bin/bash
