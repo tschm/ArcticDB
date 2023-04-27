@@ -20,15 +20,13 @@ from arcticc.config import Defaults
 from arcticc.exceptions import ArcticNativeNotYetImplemented
 from arcticcxx.exceptions import ArcticNativeCxxException
 from arcticc.flattener import Flattener
-from arcticc.toolbox.storage import get_library_tool, KeyType
 from arcticc.version_store import NativeVersionStore
 from arcticc.version_store._custom_normalizers import CustomNormalizer, register_normalizer
 from arcticc.version_store._store import UNSUPPORTED_S3_CHARS, MAX_SYMBOL_SIZE, VersionedItem
-from arcticc.version_store.helper import ArcticcMemConf
 from arcticc.version_store.helper import get_lib_cfg
-from arcticcxx.storage import NoDataFoundException
+from arcticcxx.storage import KeyType, NoDataFoundException
 from arcticc.util.test import sample_dataframe, sample_dataframe_only_strings
-from arcticcxx import set_config_int
+#from arcticcxx import set_config_int
 from arcticc.util.test import get_sample_dataframe
 from tests.util.date import DateRange
 from arcticcxx.version_store import NoSuchVersionException, StreamDescriptorMismatch
@@ -1199,7 +1197,7 @@ def test_library_deletion_lmdb(lmdb_version_store):
     assert len(lmdb_version_store.list_symbols()) == 2
     lmdb_version_store.version_store.clear()
     assert len(lmdb_version_store.list_symbols()) == 0
-    lib_tool = get_library_tool(lmdb_version_store)
+    lib_tool = lmdb_version_store.library_tools()
     assert lib_tool.count_keys(KeyType.VERSION) == 0
     assert lib_tool.count_keys(KeyType.TABLE_INDEX) == 0
 
@@ -1213,27 +1211,9 @@ def test_library_deletion_mongo(mongo_version_store):
     assert len(mongo_version_store.list_symbols()) == 2
     mongo_version_store.version_store.clear()
     assert len(mongo_version_store.list_symbols()) == 0
-    lib_tool = get_library_tool(mongo_version_store)
+    lib_tool = lmdb_version_store.library_tool()
     assert lib_tool.count_keys(KeyType.VERSION) == 0
     assert lib_tool.count_keys(KeyType.TABLE_INDEX) == 0
-
-
-def test_resolve_defaults(arcticc_native_local_lib_cfg, lib_name):
-    cfg = arcticc_native_local_lib_cfg(lib_name)
-    arcticc = ArcticcMemConf(cfg, env=Defaults.ENV)
-    lib = arcticc[lib_name]
-    proto_cfg = lib._lib_cfg.lib_desc.version.write_options
-    assert lib.resolve_defaults("recursive_normalizers", proto_cfg, False) is False
-    os.environ["recursive_normalizers"] = "True"
-    assert lib.resolve_defaults("recursive_normalizers", proto_cfg, False, uppercase=False) is True
-    cfg2 = arcticc_native_local_lib_cfg(lib_name)
-    arcticc2 = ArcticcMemConf(cfg2, env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc2, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.dynamic_strings = True
-    lib2 = arcticc2[lib_name]
-    proto_cfg = lib2._lib_cfg.lib_desc.version.write_options
-    assert lib2.resolve_defaults("dynamic_strings", proto_cfg, False) is True
-    del os.environ["recursive_normalizers"]
 
 
 def test_batch_read_meta(lmdb_version_store_tombstone_and_sync_passive):
@@ -1313,7 +1293,7 @@ def test_tombstone_deletion_with_delayed_deletes(lmdb_version_store_delayed_dele
     # All should be False now, which means the index and the tree below are deleted from storage
     # assert not all(list(v for k, v in tombstoned_version_map.items()))
     assert len(lib.list_versions(sym)) == 1
-    lib_tool = get_library_tool(lib)
+    lib_tool = lib.library_tool()
     version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
     index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
     assert len(index_keys) == 1
@@ -1357,7 +1337,7 @@ def test_tombstone_deletion_without_delayed_deletes(lmdb_version_store_new, sym)
     # All should be False now, which means the index and the tree below are deleted from storage
     # assert not all(list(v for k, v in tombstoned_version_map.items()))
     assert len(lib.list_versions(sym)) == 1
-    lib_tool = get_library_tool(lib)
+    lib_tool = lib.library_tool()
     version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
     index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
     assert len(index_keys) == 1
@@ -1493,7 +1473,7 @@ def test_delayed_deletes(lmdb_version_store_delayed_deletes, sym):
     lib.write(sym, 1)
     lib.write(sym, 2)
 
-    lib_tool = get_library_tool(lib)
+    lib_tool = lib.library_tool()
     index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
     data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
     assert len(index_keys) == 2
@@ -1514,7 +1494,7 @@ def test_delayed_deletes_with_tombstones(lmdb_version_store_delayed_deletes_with
     lib.write(sym, 2)
     lib.write(sym, 3)
 
-    lib_tool = get_library_tool(lib)
+    lib_tool = lib.library_tool()
     index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
     version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
     data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
@@ -1551,7 +1531,7 @@ def test_delayed_deletes_with_tombstones_snapshots(lmdb_version_store_delayed_de
     lib.snapshot("snap")
     lib.write(sym, 3)
 
-    lib_tool = get_library_tool(lib)
+    lib_tool = lib.library_tool()
     index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
     version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
     data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
@@ -1597,7 +1577,7 @@ def test_parametrized_fixture_for_pruning(lmdb_version_store_with_write_option, 
     lib.snapshot("snap")
     lib.write(sym, 3)
 
-    lib_tool = get_library_tool(lib)
+    lib_tool = lib.library_tool()
     index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
     version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
     data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
@@ -1740,7 +1720,6 @@ def test_write_read_partitioned_df(lmdb_version_store_new):
     lib.write("sym", df1, partition=["a"])
     lib.write("sym", df2, partition=["b"])
     lib.write("sym", df3, partition=["c"])
-    # lib_tool = get_library_tool(lib)
 
     read_df = lib.read_partitioned_df("sym").data
     assert len(read_df) == 9
@@ -1769,7 +1748,7 @@ def test_has_symbol_deleted_version_in_snapshot(fixture, sym, request):
     lib.write(sym, 2)
     assert lib.has_symbol(sym, as_of=0) is True
 
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     assert len(lt.find_keys_for_id(KeyType.TABLE_DATA, sym)) == 2
 
     lib.delete_snapshot(sym + "snap")
@@ -1787,7 +1766,7 @@ def test_change_key_type(lmdb_version_store):
     lib.snapshot("snap2")
     lib.version_store.change_key_type(KeyType.SNAPSHOT_REF, KeyType.BACKUP_SNAPSHOT_REF)
 
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     assert len(lt.find_keys(KeyType.BACKUP_SNAPSHOT_REF)) == 2
     assert len(lt.find_keys(KeyType.SNAPSHOT_REF)) == 0
 
@@ -1805,7 +1784,7 @@ def test_change_key_type(lmdb_version_store):
     lib.snapshot("snap2")
     lib.version_store.change_key_type(KeyType.SNAPSHOT_REF, KeyType.BACKUP_SNAPSHOT_REF)
 
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     assert len(lt.find_keys(KeyType.BACKUP_SNAPSHOT_REF)) == 2
     assert len(lt.find_keys(KeyType.SNAPSHOT_REF)) == 0
 
@@ -1857,7 +1836,7 @@ def test_snapshot_empty_segment(lmdb_version_store_new):
 @pytest.mark.parametrize("lmdb_version_store_with_write_option", [["use_tombstones"]], indirect=True)
 def test_compact_version_map_basic(lmdb_version_store_with_write_option, sym):
     lib = lmdb_version_store_with_write_option
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     set_config_int("VersionMap.MaxVersionBlocks", 3)
     for idx in range(10):
         lib.write(sym, idx)
@@ -1873,7 +1852,7 @@ def test_compact_version_map_basic(lmdb_version_store_with_write_option, sym):
 
 def test_compact_version_map_with_delete(s3_version_store_tombstones, sym):
     lib = s3_version_store_tombstones
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     set_config_int("VersionMap.MaxVersionBlocks", 3)
     for idx in range(10):
         lib.write(sym, idx)
@@ -1891,7 +1870,7 @@ def test_compact_version_map_with_delete(s3_version_store_tombstones, sym):
 
 def test_compact_version_map_mixed(mongo_version_store_tombstones, sym):
     lib = mongo_version_store_tombstones
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     set_config_int("VersionMap.MaxVersionBlocks", 3)
     for idx in range(10):
         lib.write(sym, idx)
@@ -1913,7 +1892,7 @@ def test_compact_version_map_mixed(mongo_version_store_tombstones, sym):
 @pytest.mark.parametrize("lib_type", ["mongo_version_store_tombstones", "s3_version_store_fixture"])
 def test_compact_library_mixed(lib_type, sym, request):
     lib = request.getfixturevalue(lib_type)
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     set_config_int("VersionMap.MaxVersionBlocks", 3)
     for idx in range(10):
         lib.write(sym, idx)
@@ -2152,7 +2131,7 @@ def test_index_keys_start_end_index(lmdb_version_store, sym):
     df = pd.DataFrame({"a": range(len(idx))}, index=idx)
     lmdb_version_store.write(sym, df)
 
-    lt = get_library_tool(lmdb_version_store)
+    lt = lmdb_version_store.library_tool()
     key = lt.find_keys_for_id(KeyType.TABLE_INDEX, sym)[0]
     assert key.start_index == 1640995200000000000
     assert key.end_index == 1649548800000000001
@@ -2293,7 +2272,7 @@ def test_dynamic_schema_bucketize(get_wide_df, sym, version_store_factory):
     lib = version_store_factory(
         col_per_group=10, row_per_segment=10, dynamic_schema=True, bucketize_dynamic=True, dynamic_strings=True
     )
-    lt = get_library_tool(lib)
+    lt = lib.library_tool()
     num_cols = 40000
     df1 = get_wide_df(0, num_cols, num_cols)
 

@@ -31,6 +31,7 @@ class PatcherLoader:
 class PatcherFinder:
     def find_module(self, fullname, path=None):
         if "arcticcxx" in fullname:
+            print(fullname)
             return PatcherLoader(old_path="arcticcxx", new_path="arcticdb_ext")
         return None
 
