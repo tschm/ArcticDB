@@ -23,7 +23,8 @@ mount -t tmpfs -o size=10G tmpfs /opt/arcticdb/arcticdb_link/cpp/out
 
 # Symlink to the .so from the python directory to facilitate running the Python tests
 cd /opt/arcticdb/arcticdb_link/python
-ln -fs ../cpp/out/linux-debug-build/arcticdb/arcticdb_ext.cpython-36m-x86_64-linux-gnu.so arcticdb_ext.so
+ln -fs ../cpp/out/linux-debug-build/arcticdb/arcticdb_ext.cpython-36m-x86_64-linux-gnu.so .
+ln -fs ../cpp/out/linux-debug-build/arcticdb/arcticdb_ext.cpython-38-x86_64-linux-gnu.so .
 
 # This is where CLion looks by default for a Python venv, removes a few clicks
 cd /opt/arcticdb
