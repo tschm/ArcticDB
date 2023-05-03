@@ -3,7 +3,6 @@ import time
 
 import mock
 import numpy as np
-import os
 import math
 import pandas as pd
 import pytest
@@ -16,21 +15,18 @@ from numpy.testing import assert_array_equal
 from pandas.util.testing import assert_frame_equal, assert_series_equal
 from pytz import timezone
 
-from arcticc.config import Defaults
 from arcticc.exceptions import ArcticNativeNotYetImplemented
 from arcticcxx.exceptions import ArcticNativeCxxException
 from arcticc.flattener import Flattener
 from arcticc.version_store import NativeVersionStore
 from arcticc.version_store._custom_normalizers import CustomNormalizer, register_normalizer
 from arcticc.version_store._store import UNSUPPORTED_S3_CHARS, MAX_SYMBOL_SIZE, VersionedItem
-from arcticc.version_store.helper import get_lib_cfg
 from arcticcxx.storage import KeyType, NoDataFoundException
 from arcticc.util.test import sample_dataframe, sample_dataframe_only_strings
-#from arcticcxx import set_config_int
+from arcticcxx import set_config_int
 from arcticc.util.test import get_sample_dataframe
 from tests.util.date import DateRange
 from arcticcxx.version_store import NoSuchVersionException, StreamDescriptorMismatch
-from tests.conftest import three_col_df
 
 
 @pytest.fixture()
@@ -392,6 +388,7 @@ def test_update_date_range_dataframe(lmdb_version_store):
     np.testing.assert_array_equal(result["a"].values, [1, 32, 33, 34, 5])
 
 
+#  TODO currently skipped as ahl.timeseries not available without man.core
 def test_update_date_range_ahl_timeseries(lmdb_version_store_ts_norm):
     timeseries = pytest.importorskip("ahl.timeseries")
     """Restrictive update - when date_range is specified ensure that we only touch values in that range. Timeframe
@@ -992,8 +989,8 @@ def test_nested_custom_types(lmdb_version_store):
     assert got_back[0] == 1
 
 
-def test_batch_operations(s3_version_store_fixture_prune_previous):
-    lmdb_version_store = s3_version_store_fixture_prune_previous
+def test_batch_operations(s3_version_store_prune_previous):
+    lmdb_version_store = s3_version_store_prune_previous
     multi_data = {"sym1": np.arange(8), "sym2": np.arange(9), "sym3": np.arange(10)}
 
     for _ in range(10):
@@ -1135,7 +1132,8 @@ def test_dataframe_with_nan_and_nat_only(lmdb_version_store):
     assert_frame_equal(lmdb_version_store.read("nan_nat").data, pd.DataFrame({"col": [pd.NaT, pd.NaT, pd.NaT]}))
 
 
-def test_coercion_to_float(lmdb_version_store):
+def test_coercion_to_float(lmdb_version_store_string_coercion):
+    lib = lmdb_version_store_string_coercion
     df = pd.DataFrame({"col": [np.NaN, "1", np.NaN]})
     # col is now an Object column with all NaNs
     df["col"][1] = np.NaN
@@ -1144,32 +1142,33 @@ def test_coercion_to_float(lmdb_version_store):
 
     with pytest.raises(ArcticNativeNotYetImplemented):
         # Needs pickling due to the obj column
-        lmdb_version_store.write("test", df)
+        lib.write("test", df)
 
-    lmdb_version_store.write("test", df, coerce_columns={"col": float})
-    returned = lmdb_version_store.read("test").data
+    lib.write("test", df, coerce_columns={"col": float})
+    returned = lib.read("test").data
     # Should be a float now.
     assert returned["col"].dtype != np.object_
 
 
-def test_coercion_to_str_with_dynamic_strings(lmdb_version_store):
+def test_coercion_to_str_with_dynamic_strings(lmdb_version_store_string_coercion):
+    lib = lmdb_version_store_string_coercion
     # assert that the getting sample function is not called
     df = pd.DataFrame({"col": [None, None, "hello", "world"]})
     assert df["col"].dtype == np.object_
 
     with pytest.raises(ArcticNativeNotYetImplemented):
-        lmdb_version_store.write("sym", df)
+        lib.write("sym", df)
 
     with mock.patch(
         "arcticc.version_store._normalization.get_sample_from_non_empty_arr", return_value="hello"
     ) as sample_mock:
         # This should succeed but uses the slow path
-        lmdb_version_store.write("sym", df, dynamic_strings=True)
+        lib.write("sym", df, dynamic_strings=True)
         sample_mock.assert_called()
 
     with mock.patch("arcticc.version_store._normalization.get_sample_from_non_empty_arr") as sample_mock:
         # This should skip the sample deduction
-        lmdb_version_store.write("sym_coerced", df, dynamic_strings=True, coerce_columns={"col": str})
+        lib.write("sym_coerced", df, dynamic_strings=True, coerce_columns={"col": str})
         sample_mock.assert_not_called()
 
 
@@ -1197,7 +1196,7 @@ def test_library_deletion_lmdb(lmdb_version_store):
     assert len(lmdb_version_store.list_symbols()) == 2
     lmdb_version_store.version_store.clear()
     assert len(lmdb_version_store.list_symbols()) == 0
-    lib_tool = lmdb_version_store.library_tools()
+    lib_tool = lmdb_version_store.library_tool()
     assert lib_tool.count_keys(KeyType.VERSION) == 0
     assert lib_tool.count_keys(KeyType.TABLE_INDEX) == 0
 
@@ -1278,166 +1277,6 @@ def test_read_with_asof_version_for_snapshotted_version(lmdb_version_store_tombs
     assert lib.read("a", as_of=0).data == 1
 
 
-def test_tombstone_deletion_with_delayed_deletes(lmdb_version_store_delayed_deletes_with_pruning_tombstones, sym):
-    lib = lmdb_version_store_delayed_deletes_with_pruning_tombstones
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-    lib.write(sym, 3)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 2
-    # True implies the tombstoned versions still exist
-    assert all(v for k, v in tombstoned_version_map.items())
-    lib.version_store._delete_tombstoned_trees(sym)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 2
-    # All should be False now, which means the index and the tree below are deleted from storage
-    # assert not all(list(v for k, v in tombstoned_version_map.items()))
-    assert len(lib.list_versions(sym)) == 1
-    lib_tool = lib.library_tool()
-    version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    assert len(index_keys) == 1
-    assert index_keys[0].version_id == 2
-
-    # 1 version _key for version 2, 2 each for version 0 and 1, as the second one is created on tombstoning and we
-    # do not delete those.
-    assert len(version_keys) == 5
-
-    lib.write("another_symbol", 1)
-    lib.write("another_symbol", 2)
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    assert len(lib.list_versions()) == 2
-    another_sym_versions = [k for k in lib.list_versions() if k["symbol"] == "another_symbol"]
-    assert len(another_sym_versions) == 1
-    assert another_sym_versions[0]["version"] == 1
-
-    # Casually run it a few times!
-    lib.version_store._delete_tombstoned_trees(sym)
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    assert lib.read(sym).data == 3
-    assert lib.read("another_symbol").data == 2
-
-
-def test_tombstone_deletion_without_delayed_deletes(lmdb_version_store_new, sym):
-    lib = lmdb_version_store_new
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-    lib.write(sym, 3)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 2
-    # False implies the tombstoned versions dont exist
-    assert tombstoned_version_map[0] is False
-    assert tombstoned_version_map[1] is False
-
-    lib.version_store._delete_tombstoned_trees(sym)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 2
-    # All should be False now, which means the index and the tree below are deleted from storage
-    # assert not all(list(v for k, v in tombstoned_version_map.items()))
-    assert len(lib.list_versions(sym)) == 1
-    lib_tool = lib.library_tool()
-    version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    assert len(index_keys) == 1
-    assert index_keys[0].version_id == 2
-
-    # 1 version _key for version 2, 2 each for version 0 and 1, as the second one is created on tombstoning and we
-    # do not delete those.
-    assert len(version_keys) == 5
-
-    lib.write("another_symbol", 1)
-    lib.write("another_symbol", 2)
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    assert len(lib.list_versions()) == 2
-    another_sym_versions = [k for k in lib.list_versions() if k["symbol"] == "another_symbol"]
-    assert len(another_sym_versions) == 1
-    assert another_sym_versions[0]["version"] == 1
-
-    # Casually run it a few times!
-    lib.version_store._delete_tombstoned_trees(sym)
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    assert lib.read(sym).data == 3
-    assert lib.read("another_symbol").data == 2
-
-
-def test_tombstone_deletion_with_snapshots(lmdb_version_store_tombstone, sym):
-    lib = lmdb_version_store_tombstone
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-
-    lib.snapshot("snap")
-    lib.write(sym, 3, prune_previous_version=True)
-
-    # Two versions should be in tombstones, even though 1 of them is in a snapshot
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 2
-
-    # this version is in a snapshot
-    assert lib.read(sym, as_of=1).data == 2
-
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    # Should still be able to read this.
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-
-
-@pytest.mark.parametrize("lmdb_version_store_with_write_option", [["use_tombstones", "delayed_deletes"]], indirect=True)
-def test_get_tombstone_deletion_state_with_delayed_del(lmdb_version_store_with_write_option, sym):
-    lib = lmdb_version_store_with_write_option
-    lib.write(sym, 1)
-
-    lib.write(sym, 2)
-
-    lib.snapshot("snap")
-    lib.write(sym, 3, prune_previous_version=True)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    # we haven't deleted anything at this point so we should have all trues
-    assert all([v for k, v in tombstoned_version_map.items()])
-    # v0 and v1
-    assert len(tombstoned_version_map) == 2
-
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    # This should delete the index key for version 0 but not version 1 which is in a snapshot
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert tombstoned_version_map[0] is False
-    # in a snapshot
-    assert tombstoned_version_map[1] is True
-
-    lib.write(sym, 3)
-    lib._delete_version(sym, 2)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 3
-    # Is not deleted yet.
-    assert tombstoned_version_map[2] is True
-
-
-@pytest.mark.parametrize("lmdb_version_store_with_write_option", [["use_tombstones"]], indirect=True)
-def test_get_tombstone_deletion_state_without_delayed_del(lmdb_version_store_with_write_option, sym):
-    lib = lmdb_version_store_with_write_option
-    lib.write(sym, 1)
-
-    lib.write(sym, 2)
-
-    lib.snapshot("snap")
-    lib.write(sym, 3, prune_previous_version=True)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    # v0 and v1
-    assert len(tombstoned_version_map) == 2
-    assert tombstoned_version_map[0] is False
-    assert tombstoned_version_map[1] is True
-
-    lib.write(sym, 3)
-    lib._delete_version(sym, 2)
-    tombstoned_version_map = lib.version_store._get_all_tombstoned_versions(sym)
-    assert len(tombstoned_version_map) == 3
-    assert tombstoned_version_map[2] is False
-
-
 def test_get_timerange_for_symbol(lmdb_version_store, sym):
     lib = lmdb_version_store
     initial_timestamp = pd.Timestamp("2019-01-01")
@@ -1467,147 +1306,8 @@ def test_get_timerange_for_symbol_dst(lmdb_version_store, sym):
     assert maxts == datetime(2021, 4, 1, 3)
 
 
-def test_delayed_deletes(lmdb_version_store_delayed_deletes, sym):
-    lib = lmdb_version_store_delayed_deletes
-    # no pruning
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-
-    lib_tool = lib.library_tool()
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
-    assert len(index_keys) == 2
-    assert len(data_keys) == 2
-
-    lib._delete_version(sym, 0)
-    index_keys_after_delete = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    assert len(index_keys) == 2
-
-    # only version 1 should exist
-    assert len(lib.list_versions()) == 1
-
-
-def test_delayed_deletes_with_tombstones(lmdb_version_store_delayed_deletes_with_pruning_tombstones, sym):
-    lib = lmdb_version_store_delayed_deletes_with_pruning_tombstones
-    # no pruning
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-    lib.write(sym, 3)
-
-    lib_tool = lib.library_tool()
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
-    data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
-    # Index keys should not be deleted
-    assert len(index_keys) == 3
-    assert len(data_keys) == 3
-    # 1 for v2, 2 each for v0 and v1
-    assert len(version_keys) == 5
-    # only version 2 should exist in list_versions
-    assert len(lib.list_versions()) == 1
-
-    # Actually delete stuff now
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    assert len(index_keys) == 1
-
-    assert len(lib.list_versions()) == 1
-    version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
-    # we don't delete these
-    assert len(version_keys) == 5
-
-    # sanity check
-    assert lib.read(sym).data == 3
-    lib.write(sym, 4)
-    assert lib.read(sym).data == 4
-
-
-def test_delayed_deletes_with_tombstones_snapshots(lmdb_version_store_delayed_deletes_with_pruning_tombstones, sym):
-    lib = lmdb_version_store_delayed_deletes_with_pruning_tombstones
-    # no pruning
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-    lib.snapshot("snap")
-    lib.write(sym, 3)
-
-    lib_tool = lib.library_tool()
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
-    data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
-    # Index keys should not be deleted
-    assert len(index_keys) == 3
-    assert len(data_keys) == 3
-    # 1 for v2, 2 each for v0 and v1
-    assert len(version_keys) == 5
-    # version 1 and 2 should exist in list_versions
-    assert len(lib.list_versions()) == 2
-
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    # Index keys for snapshot will not be deleted
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    assert len(index_keys) == 2
-
-    # sanity check
-    assert lib.read(sym).data == 3
-    lib.write(sym, 4)
-    assert lib.read(sym).data == 4
-
-    assert len(lib.list_snapshots()) == 1
-
-
-#     bool prune_previous_version = 7;
-#     bool de_duplication = 8;
-#     bool dynamic_strings = 9;
-#     bool recursive_normalizers = 10;
-#     bool pickle_on_failure = 11;
-#     bool use_tombstones = 12;
-#     bool delayed_deletes = 13;
-@pytest.mark.parametrize(
-    "lmdb_version_store_with_write_option",
-    [["use_tombstones", "delayed_deletes", "prune_previous_version"]],
-    indirect=True,
-)
-def test_parametrized_fixture_for_pruning(lmdb_version_store_with_write_option, sym):
-    lib = lmdb_version_store_with_write_option
-    # no pruning
-    lib.write(sym, 1)
-    lib.write(sym, 2)
-    lib.snapshot("snap")
-    lib.write(sym, 3)
-
-    lib_tool = lib.library_tool()
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    version_keys = [k for k in lib_tool.find_keys(KeyType.VERSION) if k.id == sym]
-    data_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_DATA) if k.id == sym]
-    # Index keys should not be deleted
-    assert len(index_keys) == 3
-    assert len(data_keys) == 3
-    # 1 for v2, 2 each for v0 and v1
-    assert len(version_keys) == 5
-    # version 1 and 2 should exist in list_versions
-    assert len(lib.list_versions()) == 2
-
-    lib.version_store._delete_tombstoned_trees(sym)
-
-    # Index keys for snapshot will not be deleted
-    index_keys = [k for k in lib_tool.find_keys(KeyType.TABLE_INDEX) if k.id == sym]
-    assert len(index_keys) == 2
-
-    # sanity check
-    assert lib.read(sym).data == 3
-    lib.write(sym, 4)
-    assert lib.read(sym).data == 4
-
-    assert len(lib.list_snapshots()) == 1
-
-
-@pytest.mark.parametrize(
-    "lmdb_version_store_with_write_option", [["use_tombstones", "sync_passive.enabled"]], indirect=True
-)
-def test_batch_read_meta_with_tombstones(lmdb_version_store_with_write_option):
-    lib = lmdb_version_store_with_write_option
+def test_batch_read_meta_with_tombstones(lmdb_version_store_tombstone_and_sync_passive):
+    lib = lmdb_version_store_tombstone_and_sync_passive
     lib.write("sym1", 1, {"meta1": 1})
     lib.write("sym1", 1, {"meta1": 2})
     lib.write("sym2", 1, {"meta2": 1})
@@ -1621,13 +1321,8 @@ def test_batch_read_meta_with_tombstones(lmdb_version_store_with_write_option):
     assert lib.read_metadata("sym1").metadata == results_dict["sym1"].metadata
 
 
-@pytest.mark.parametrize(
-    "lmdb_version_store_with_write_option",
-    [["use_tombstones", "prune_previous_version", "sync_passive.enabled"]],
-    indirect=True,
-)
-def test_batch_read_meta_with_pruning(lmdb_version_store_with_write_option):
-    lib = lmdb_version_store_with_write_option
+def test_batch_read_meta_with_pruning(lmdb_version_store_tombstone_and_sync_passive_and_prune):
+    lib = lmdb_version_store_tombstone_and_sync_passive_and_prune
     lib.write("sym1", 1, {"meta1": 1})
     lib.write("sym1", 1, {"meta1": 2})
     lib.write("sym1", 3, {"meta1": 3})
@@ -1737,64 +1432,8 @@ def test_list_symbols(lmdb_version_store):
     assert set(lib.list_symbols(regex="a")) == set(lib.list_symbols(regex="a", use_symbol_list=False))
 
 
-@pytest.mark.parametrize(
-    "fixture", ["lmdb_version_store_new", "lmdb_version_store_delayed_deletes_with_pruning_tombstones"]
-)
-def test_has_symbol_deleted_version_in_snapshot(fixture, sym, request):
-    lib = request.getfixturevalue(fixture)
-    lib.write(sym, 1)
-    lib.snapshot(sym + "snap")
-    # prune_previous_version is true, so will delete version 0 from version map but not snapshot
-    lib.write(sym, 2)
-    assert lib.has_symbol(sym, as_of=0) is True
-
-    lt = lib.library_tool()
-    assert len(lt.find_keys_for_id(KeyType.TABLE_DATA, sym)) == 2
-
-    lib.delete_snapshot(sym + "snap")
-    lib.version_store._delete_tombstoned_trees()
-    assert lib.has_symbol(sym, as_of=0) is False
-    assert len(lt.find_keys_for_id(KeyType.TABLE_DATA, sym)) == 1
-
-
-def test_change_key_type(lmdb_version_store):
-    lib = lmdb_version_store
-    lib.write("stuff", 1)
-    lib.write("more_stuff", 5)
-    lib.snapshot("snap1")
-    lib.write("stuff", 7)
-    lib.snapshot("snap2")
-    lib.version_store.change_key_type(KeyType.SNAPSHOT_REF, KeyType.BACKUP_SNAPSHOT_REF)
-
-    lt = lib.library_tool()
-    assert len(lt.find_keys(KeyType.BACKUP_SNAPSHOT_REF)) == 2
-    assert len(lt.find_keys(KeyType.SNAPSHOT_REF)) == 0
-
-    lib.version_store.change_key_type(KeyType.BACKUP_SNAPSHOT_REF, KeyType.SNAPSHOT_REF)
-    assert lib.read("stuff", as_of="snap1").data == 1
-    assert lib.read("stuff", as_of="snap2").data == 7
-
-
-def test_change_key_type(lmdb_version_store):
-    lib = lmdb_version_store
-    lib.write("stuff", 1)
-    lib.write("more_stuff", 5)
-    lib.snapshot("snap1")
-    lib.write("stuff", 7)
-    lib.snapshot("snap2")
-    lib.version_store.change_key_type(KeyType.SNAPSHOT_REF, KeyType.BACKUP_SNAPSHOT_REF)
-
-    lt = lib.library_tool()
-    assert len(lt.find_keys(KeyType.BACKUP_SNAPSHOT_REF)) == 2
-    assert len(lt.find_keys(KeyType.SNAPSHOT_REF)) == 0
-
-    lib.version_store.change_key_type(KeyType.BACKUP_SNAPSHOT_REF, KeyType.SNAPSHOT_REF)
-    assert lib.read("stuff", as_of="snap1").data == 1
-    assert lib.read("stuff", as_of="snap2").data == 7
-
-
-def test_get_index(s3_version_store_fixture):
-    lib = s3_version_store_fixture
+def test_get_index(s3_version_store):
+    lib = s3_version_store
 
     symbol = "thing"
     lib.write(symbol, 1)
@@ -1818,8 +1457,8 @@ def test_get_index(s3_version_store_fixture):
     assert idx.iloc[0]["version_id"] == 0
 
 
-def test_snapshot_empty_segment(lmdb_version_store_new):
-    lib = lmdb_version_store_new
+def test_snapshot_empty_segment(lmdb_version_store):
+    lib = lmdb_version_store
 
     lib.write("a", 1)
     lib.write("b", 1)
@@ -1833,9 +1472,8 @@ def test_snapshot_empty_segment(lmdb_version_store_new):
     assert lib.has_symbol("c") is False
 
 
-@pytest.mark.parametrize("lmdb_version_store_with_write_option", [["use_tombstones"]], indirect=True)
-def test_compact_version_map_basic(lmdb_version_store_with_write_option, sym):
-    lib = lmdb_version_store_with_write_option
+def test_compact_version_map_basic(lmdb_version_store_tombstone, sym):
+    lib = lmdb_version_store_tombstone
     lt = lib.library_tool()
     set_config_int("VersionMap.MaxVersionBlocks", 3)
     for idx in range(10):
@@ -1889,7 +1527,7 @@ def test_compact_version_map_mixed(mongo_version_store_tombstones, sym):
     assert len(lt.find_keys_for_id(KeyType.VERSION, sym)) == 2
 
 
-@pytest.mark.parametrize("lib_type", ["mongo_version_store_tombstones", "s3_version_store_fixture"])
+@pytest.mark.parametrize("lib_type", ["mongo_version_store_tombstones", "s3_version_store"])
 def test_compact_library_mixed(lib_type, sym, request):
     lib = request.getfixturevalue(lib_type)
     lt = lib.library_tool()
@@ -1924,8 +1562,8 @@ def test_compact_library_mixed(lib_type, sym, request):
     assert len(lib.list_versions(sym)) == 24
 
 
-def test_columns_as_nparrary(lmdb_version_store_new, sym):
-    lib = lmdb_version_store_new
+def test_columns_as_nparrary(lmdb_version_store_tombstone_and_pruning, sym):
+    lib = lmdb_version_store_tombstone_and_pruning
     d = {"col1": [1, 2], "col2": [3, 4]}
     lib.write(sym, pd.DataFrame(data=d))
 
@@ -1943,8 +1581,8 @@ def test_columns_as_nparrary(lmdb_version_store_new, sym):
     assert all(vit.data["col2"] == [3, 4])
 
 
-def test_simple_recursive_normalizer(s3_version_store_fixture):
-    s3_version_store_fixture.write(
+def test_simple_recursive_normalizer(s3_version_store):
+    s3_version_store.write(
         "rec_norm", data={"a": np.arange(5), "b": np.arange(8), "c": None}, recursive_normalizers=True
     )
 
@@ -2069,7 +1707,7 @@ def test_batch_restore_version(lmdb_version_store_tombstone_and_sync_passive):
         assert_frame_equal(read_df, dfs[d])
 
 
-def test_batch_append(lmdb_version_store_tombstone_and_sync_passive):
+def test_batch_append(lmdb_version_store_tombstone_and_sync_passive, three_col_df):
     lmdb_version_store = lmdb_version_store_tombstone_and_sync_passive
     multi_data = {"sym1": three_col_df(), "sym2": three_col_df(1), "sym3": three_col_df(2)}
     metadata = {"sym1": {"key1": "val1"}, "sym2": None, "sym3": None}
@@ -2079,7 +1717,6 @@ def test_batch_append(lmdb_version_store_tombstone_and_sync_passive):
     )
 
     multi_append = {"sym1": three_col_df(10), "sym2": three_col_df(11), "sym3": three_col_df(12)}
-    print(multi_append)
     append_metadata = {"sym1": {"key1": "val2"}, "sym2": None, "sym3": "val3"}
     append_result = lmdb_version_store.batch_append(
         list(multi_append.keys()),
@@ -2314,29 +1951,6 @@ def test_dynamic_schema_bucketize(get_wide_df, sym, version_store_factory):
     finaldf = finaldf.reindex(sorted(list(finaldf.columns)), axis=1)
     res = res.reindex(sorted(list(res.columns)), axis=1)
     assert_frame_equal(res, finaldf)
-
-
-@pytest.mark.parametrize("method", ("append", "update"))
-@pytest.mark.parametrize("num", (5, 50, 1001))
-def test_diff_long_stream_descriptor_mismatch(lmdb_version_store, method, num):
-    lib: NativeVersionStore = lmdb_version_store
-    lib.write("x", pd.DataFrame({f"col{i}": [i, i + 1, i + 2] for i in range(num)}, index=pd.date_range(0, periods=3)))
-    bad_row = {f"col{i}": (["a"] if i % 20 == 4 else [i]) for i in (0, *range(3, num + 1))}
-    try:
-        if method == "append":
-            lib.append("x", pd.DataFrame(bad_row, index=pd.date_range("1970-01-04", periods=1)))
-        else:
-            dr = pd.date_range("1970-01-02", periods=1)
-            lib.update("x", pd.DataFrame(bad_row, index=dr), date_range=dr)
-        assert False, "should throw"
-    except StreamDescriptorMismatch as e:
-        print(e)
-        msg = str(e)
-        assert method in msg
-        for i in (1, 2, *(x for x in range(num) if x % 20 == 4), num):
-            assert f"col{i}: TD<type=INT64, dim=0>" in msg
-            if i % 20 == 4:
-                assert f"col{i}: TD<type=UTF" in msg
 
 
 def test_get_non_existing_columns_in_series(lmdb_version_store, sym):

@@ -1,4 +1,6 @@
-__path__ = __import__('pkgutil').extend_path(__path__, __name__)
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+
+from arcticdb import *
 
 import sys
 import importlib
@@ -36,6 +38,4 @@ class PatcherFinder:
         return None
 
 
-# Add the custom importer to the meta_path
 sys.meta_path.append(PatcherFinder())
-

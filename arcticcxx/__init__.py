@@ -1,9 +1,10 @@
-__path__ = __import__('pkgutil').extend_path(__path__, __name__)
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+
+from arcticdb_ext import *
 
 import sys
 import importlib
 from dataclasses import dataclass
-
 
 # Patch imports containing "old-style" references to arcticc to the Github repo ArcticDB
 # This is because some naming changed as part of open-sourcing for cosmetic reasons.
@@ -31,11 +32,8 @@ class PatcherLoader:
 class PatcherFinder:
     def find_module(self, fullname, path=None):
         if "arcticcxx" in fullname:
-            print(fullname)
             return PatcherLoader(old_path="arcticcxx", new_path="arcticdb_ext")
         return None
 
 
-# Add the custom importer to the meta_path
 sys.meta_path.append(PatcherFinder())
-

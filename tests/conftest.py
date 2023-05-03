@@ -1,13 +1,13 @@
-from arcticc.version_store._custom_normalizers import register_normalizer, clear_registered_normalizers
-import sys
+import functools
+import multiprocessing
+import shutil
+
+import boto3
+import werkzeug
+from moto.server import DomainDispatcherApplication, create_backend_app
 
 import signal
 
-if sys.platform == "win32":
-    # Hack to define signal.SIGKILL as some deps eg pytest-test-fixtures hardcode SIGKILL terminations.
-    signal.SIGKILL = signal.SIGINT
-
-import string
 import time
 import os
 import pytest
@@ -15,34 +15,113 @@ import numpy as np
 import pandas as pd
 import random
 from datetime import datetime
-from typing import Optional
-from functools import partial
+from typing import Optional, Any, Dict
 
-from pytest_server_fixtures import CONFIG
-from arcticc.pb2.storage_pb2 import EnvironmentConfigsMap
-from arcticc.pb2.lmdb_storage_pb2 import Config as LmdbConfig
+from pytest_server_fixtures.base import get_ephemeral_port
 
-from arcticc.version_store.helper import (
-    get_storage_for_lib_name,
-    get_secondary_storage_for_lib_name,
-    get_lib_cfg,
-    create_test_lmdb_cfg,
-    create_test_s3_cfg,
-)
-
+from arcticc.version_store.helper import create_test_lmdb_cfg, create_test_s3_cfg
 from arcticc.config import Defaults
 from arcticc.util.test import configure_test_logger, apply_lib_cfg
+from arcticc.version_store.helper import ArcticMemoryConfig
 from arcticc.version_store import NativeVersionStore
-from numpy.random import RandomState
-from pandas import DataFrame
+from arcticc.version_store._normalization import MsgPackNormalizer
+from arcticc.version_store._custom_normalizers import register_normalizer, clear_registered_normalizers
 
-_rnd = RandomState(0x42)
 
 configure_test_logger()
 
-# pytest_plugins = ['pytest_profiling']
+BUCKET_ID = 0
+# Use a smaller memory mapped limit for all tests
+MsgPackNormalizer.MMAP_DEFAULT_SIZE = 20 * (1 << 20)
 
-_CONTAINER_MONGOD = "/opt/mongo/bin/mongod"
+
+def run_server(port):
+    werkzeug.run_simple(
+        "0.0.0.0", port, DomainDispatcherApplication(create_backend_app, service="s3"), threaded=True, ssl_context=None
+    )
+
+
+@pytest.fixture(scope="module")
+def _moto_s3_uri_module():
+    port = get_ephemeral_port()
+    p = multiprocessing.Process(target=run_server, args=(port,))
+    p.start()
+
+    time.sleep(0.5)
+
+    yield f"http://localhost:{port}"
+
+    try:
+        # terminate sends SIGTERM - no need to be polite here so...
+        os.kill(p.pid, signal.SIGKILL)
+
+        p.terminate()
+        p.join()
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="function")
+def boto_client(_moto_s3_uri_module):
+    endpoint = _moto_s3_uri_module
+    client = boto3.client(
+        service_name="s3", endpoint_url=endpoint, aws_access_key_id="awd", aws_secret_access_key="awd"
+    )
+
+    yield client
+
+
+@pytest.fixture
+def aws_access_key():
+    return "awd"
+
+
+@pytest.fixture
+def aws_secret_key():
+    return "awd"
+
+
+@pytest.fixture(scope="function")
+def moto_s3_endpoint_and_credentials(_moto_s3_uri_module, aws_access_key, aws_secret_key):
+    global BUCKET_ID
+
+    endpoint = _moto_s3_uri_module
+    port = endpoint.rsplit(":", 1)[1]
+    client = boto3.client(
+        service_name="s3", endpoint_url=endpoint, aws_access_key_id=aws_access_key, aws_secret_access_key=aws_secret_key
+    )
+
+    bucket = f"test_bucket_{BUCKET_ID}"
+    client.create_bucket(Bucket=bucket)
+    BUCKET_ID = BUCKET_ID + 1
+    yield endpoint, port, bucket, aws_access_key, aws_secret_key
+
+
+@pytest.fixture(scope="function")
+def moto_s3_uri_incl_bucket(moto_s3_endpoint_and_credentials):
+    endpoint, port, bucket, aws_access_key, aws_secret_key = moto_s3_endpoint_and_credentials
+    yield endpoint.replace("http://", "s3://").rsplit(":", 1)[
+        0
+    ] + ":" + bucket + "?access=" + aws_access_key + "&secret=" + aws_secret_key + "&port=" + port
+
+
+@pytest.fixture(scope="function", params=("S3", "LMDB"))
+def arctic_client(request, moto_s3_uri_incl_bucket, tmpdir):
+    if request.param == "S3":
+        ac = Arctic(moto_s3_uri_incl_bucket)
+    elif request.param == "LMDB":
+        ac = Arctic(f"lmdb://{tmpdir}")
+    else:
+        raise NotImplementedError()
+
+    assert not ac.list_libraries()
+    yield ac
+
+
+@pytest.fixture(scope="function")
+def arctic_library(arctic_client):
+    arctic_client.create_library("pytest_test_lib")
+    yield arctic_client["pytest_test_lib"]
 
 
 @pytest.fixture()
@@ -55,42 +134,20 @@ def lib_name():
     return "local.test" + datetime.utcnow().strftime("%Y-%m-%dT%H_%M_%S_%f")
 
 
-# No longer necessary given both the dir and the lib_name are now unique
-def get_temp_dbdir(tmpdir):
-    return str(tmpdir.mkdir("lmdb.{:x}".format(_rnd.randint(100000))))
-
-
-@pytest.fixture(autouse=True)
-def fix_mongod():
-    if not os.path.isfile(CONFIG.mongo_bin):
-        CONFIG.mongo_bin = _CONTAINER_MONGOD
-
-
 @pytest.fixture
-def arcticc_native_local_lib_cfg(tmpdir):
+def arcticdb_test_s3_config(moto_s3_endpoint_and_credentials):
+    endpoint, port, bucket, aws_access_key, aws_secret_key = moto_s3_endpoint_and_credentials
+
     def create(lib_name):
-        return create_local_lmdb_cfg(lib_name=lib_name, db_dir=str(tmpdir))
-
-    # def create(lib_name):
-    #    return create_test_s3_cfg(lib_name=lib_name)
-
-    # def create(lib_name):
-    #   return create_test_vast_cfg(lib_name=lib_name)
+        return create_test_s3_cfg(lib_name, aws_access_key, aws_secret_key, bucket, endpoint)
 
     return create
 
 
-@pytest.fixture
-def arcticc_native_local_lib_cfg_extra(tmpdir):
-    def create():
-        return create_local_lmdb_cfg(lib_name="local.extra", db_dir=get_temp_dbdir(tmpdir))
-
-    return create
-
-
-def _version_store_factory_body(
+def _version_store_factory_impl(
     used, make_cfg, default_name, *, name: str = None, reuse_name=False, **kwargs
 ) -> NativeVersionStore:
+    """Common logic behind all the factory fixtures"""
     name = name or default_name
     if name == "_unique_":
         name = name + str(len(used))
@@ -100,48 +157,95 @@ def _version_store_factory_body(
     # Use symbol list by default (can still be overridden by kwargs)
     lib.version.symbol_list = True
     apply_lib_cfg(lib, kwargs)
-    out = ArcticcMemConf(cfg, Defaults.ENV)[name]
+    out = ArcticMemoryConfig(cfg, Defaults.ENV)[name]
     used[name] = out
     return out
 
 
 @pytest.fixture
-def version_store_factory(arcticc_native_local_lib_cfg, lib_name):
+def version_store_factory(lib_name, tmpdir):
     """Factory to create any number of distinct LMDB libs with the given WriteOptions or VersionStoreConfig.
 
-    Accepts legacy options col_per_group and row_per_segment which defaults to 2.
-    `name` can be a magical value "_unique_" which will create libs with unique names."""
-    used = {}
+    Accepts legacy options col_per_group and row_per_segment.
+    `name` can be a magical value "_unique_" which will create libs with unique names.
+    The values in `lmdb_config` populates the `LmdbConfig` Protobuf that creates the `Library` in C++. On Windows, it
+    can be used to override the `map_size`.
+    """
+    used: Dict[str, NativeVersionStore] = {}
 
-    def version_store(col_per_group: Optional[int] = 2, row_per_segment: Optional[int] = 2, **kwargs):
+    def create_version_store(
+        col_per_group: Optional[int] = None,
+        row_per_segment: Optional[int] = None,
+        lmdb_config: Dict[str, Any] = {},
+        **kwargs,
+    ) -> NativeVersionStore:
         if col_per_group is not None and "column_group_size" not in kwargs:
             kwargs["column_group_size"] = col_per_group
         if row_per_segment is not None and "segment_row_size" not in kwargs:
             kwargs["segment_row_size"] = row_per_segment
-        return _version_store_factory_body(used, arcticc_native_local_lib_cfg, lib_name, **kwargs)
+        cfg_factory = functools.partial(create_test_lmdb_cfg, db_dir=str(tmpdir), lmdb_config=lmdb_config)
+        return _version_store_factory_impl(used, cfg_factory, lib_name, **kwargs)
 
-    return version_store
+    try:
+        yield create_version_store
+    except RuntimeError as e:
+        if "mdb_" in str(e):  # Dump keys when we get uncaught exception from LMDB:
+            for store in used.values():
+                print(store)
+                lt = store.library_tool()
+                for kt in lt.key_types():
+                    for key in lt.find_keys(kt):
+                        print(key)
+        raise
+    finally:
+        for result in used.values():
+            #  pytest holds a member variable `cached_result` equal to `result` above which keeps the storage alive and
+            #  locked. See https://github.com/pytest-dev/pytest/issues/5642 . So we need to decref the C++ objects keeping
+            #  the LMDB env open before they will release the lock and allow Windows to delete the LMDB files.
+            result.version_store = None
+            result._library = None
+
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 @pytest.fixture
-def s3_store_factory(lib_name):
-    """Factory to create any number of S3 libs on Pure with the given WriteOptions or VersionStoreConfig.
+def s3_store_factory(lib_name, arcticdb_test_s3_config):
+    """Factory to create any number of S3 libs with the given WriteOptions or VersionStoreConfig.
 
     `name` can be a magical value "_unique_" which will create libs with unique names.
     This factory will clean up any libraries requested
     """
     used = {}
     try:
-        yield partial(_version_store_factory_body, used, create_test_s3_cfg, lib_name)
+        yield functools.partial(_version_store_factory_impl, used, arcticdb_test_s3_config, lib_name)
     finally:
         for lib in used.values():
             lib.version_store.clear()
 
 
+@pytest.fixture(scope="function")
+def s3_version_store(s3_store_factory):
+    return s3_store_factory()
+
+
+@pytest.fixture(scope="function")
+def s3_version_store_prune_previous(s3_store_factory):
+    return s3_store_factory(prune_previous_version=True)
+
+
+@pytest.fixture(scope="function")
+def s3_version_store_tombstones(s3_store_factory):
+    return s3_store_factory(use_tombstones=True)
+
+
+@pytest.fixture
+def lmdb_version_store_string_coercion(version_store_factory):
+    return version_store_factory()
+
+
 @pytest.fixture
 def lmdb_version_store(version_store_factory):
-    return version_store_factory(col_per_group=None, row_per_segment=None)
-    # FUTURE: replace most of the fixtures below with factory calls in test methods
+    return version_store_factory(dynamic_strings=True)
 
 
 @pytest.fixture
@@ -155,175 +259,45 @@ def lmdb_version_store_ts_norm(version_store_factory):
 
 
 @pytest.fixture
-def version_store_sync_test_factory(mongo_server_sess, tmpdir):
-    def version_stores(num_targets=1, delayed_deletes=True, fast_tombstone_all=True, name=None):
-        # type: (Optional[int], Optional[bool], Optional[bool], Optional[str])->(NativeVersionStore, List[NativeVersionStore])
-        cfg = EnvironmentConfigsMap()
-        # 0 will be the source, 1-num_targets will be the targets
-        libs = []
-        # Add a random hash on each call, otherwise calling twice with the same arguments creates the same storage_ids
-        base_lib_name = (
-            name
-            if name
-            else "lib-{}-{}-{}-{}".format(
-                "".join(random.choices(string.ascii_letters, k=5)), num_targets, delayed_deletes, fast_tombstone_all
-            )
-        )
-        for i in range(num_targets + 1):
-            lib_name = "local.{}-{}".format(base_lib_name, "source" if i == 0 else "target-{}".format(i))
-            add_mongo_library_to_env(
-                cfg,
-                lib_name=lib_name,
-                env_name=Defaults.ENV,
-                uri="mongodb://{}:{}".format(mongo_server_sess.hostname, mongo_server_sess.port),
-            )
-            lib_cfg = cfg.env_by_id[Defaults.ENV].lib_by_path[lib_name]
-            lib_cfg.version.write_options.sync_passive.enabled = True
-            lib_cfg.version.write_options.delayed_deletes = delayed_deletes
-            lib_cfg.version.write_options.fast_tombstone_all = fast_tombstone_all
-            # Set some default config we want for all tests
-            lib_cfg.version.symbol_list = True
-            lib_cfg.version.write_options.column_group_size = 2
-            lib_cfg.version.write_options.segment_row_size = 2
-            libs.append(ArcticcMemConf(cfg, Defaults.ENV)[lib_name])
-        storage_ids = [x.lib_cfg().lib_desc.storage_ids[0] for x in libs]
-        return libs[0], libs[1:], storage_ids
-
-    return version_stores
+def lmdb_version_store_prune_previous(version_store_factory):
+    return version_store_factory(dynamic_strings=True, prune_previous_version=True, use_tombstones=True)
 
 
 @pytest.fixture
-def lmdb_version_store_column_buckets(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.column_group_size = 3
-    lib_cfg.version.write_options.segment_row_size = 2
-    lib_cfg.version.write_options.bucketize_dynamic = True
-    return arcticc[lib_name]
+def lmdb_version_store_big_map(version_store_factory):
+    return version_store_factory(lmdb_config={"map_size": 2 ** 30})
 
 
 @pytest.fixture
-def lmdb_version_store_column_buckets_dynamic_string(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.column_group_size = 3
-    lib_cfg.version.write_options.segment_row_size = 2
-    lib_cfg.version.write_options.bucketize_dynamic = True
-    lib_cfg.version.write_options.dynamic_strings = True
-    return arcticc[lib_name]
+def lmdb_version_store_column_buckets(version_store_factory):
+    return version_store_factory(dynamic_schema=True, column_group_size=3, segment_row_size=2, bucketize_dynamic=True)
 
 
 @pytest.fixture
-def lmdb_version_store_new(arcticc_native_local_lib_cfg, lib_name):
-    # TODO: this fixture has all the defaults which are enabled for version store, I haven't renamed
-    # the original fixture as some of our tests that rely on no pruning will fail.
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.use_tombstones = True
-    lib_cfg.version.write_options.prune_previous_version = True
-    lib_cfg.version.symbol_list = True
-
-    return arcticc[lib_name]
+def lmdb_version_store_dynamic_schema(version_store_factory):
+    return version_store_factory(dynamic_schema=True, dynamic_strings=True)
 
 
 @pytest.fixture
-def lmdb_version_store_dynamic_schema(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.use_tombstones = True
-    lib_cfg.version.write_options.prune_previous_version = True
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.dynamic_strings = True
-    lib_cfg.version.symbol_list = True
-
-    return arcticc[lib_name]
+def lmdb_version_store_delayed_deletes(version_store_factory):
+    return version_store_factory(delayed_deletes=True, dynamic_strings=True, prune_previous_version=True)
 
 
 @pytest.fixture
-def lmdb_version_store_tombstones_no_symbol_list(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.use_tombstones = True
-    lib_cfg.version.write_options.prune_previous_version = True
-    lib_cfg.version.symbol_list = False
-
-    return arcticc[lib_name]
+def lmdb_version_store_delayed_deletes_with_pruning_tombstones(version_store_factory):
+    return version_store_factory(
+        delayed_deletes=True, use_tombstones=True, prune_previous_version=True, symbol_list=True
+    )
 
 
 @pytest.fixture
-def lmdb_tick_store_small_row(arcticc_native_local_lib_cfg, lib_name):
-    # Note this is the same as a version store with no column filtering for now.
-    cfg = arcticc_native_local_lib_cfg(lib_name)
-    lib = cfg.env_by_id[Defaults.ENV].lib_by_path[Defaults.LIB]
-    lib.version.write_options.column_group_size = np.iinfo(np.int32).max  # TODO shouldn't be needed
-    lib.version.write_options.segment_row_size = 3
-    lib.version.write_options.dynamic_schema = True
-    return ArcticcMemConf(cfg=cfg, env=Defaults.ENV)[lib_name]
+def lmdb_version_store_tombstones_no_symbol_list(version_store_factory):
+    return version_store_factory(use_tombstones=True, dynamic_schema=True, symbol_list=False, dynamic_strings=True)
 
 
 @pytest.fixture
-def lmdb_tick_store(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = np.iinfo(np.int32).max  # TODO shouldn't be needed
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.allow_sparse = True
-    lib_cfg.version.write_options.incomplete = True
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_version_store_double_storage(arcticc_native_local_lib_cfg, tmpdir, lib_name):
-    config = arcticc_native_local_lib_cfg(lib_name)
-    arcticc = ArcticcMemConf(config, env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.storage_fallthrough = True
-
-    lmdb = LmdbConfig()
-    lmdb.path = get_temp_dbdir(tmpdir)
-    env = config.env_by_id[Defaults.ENV]
-    sid, storage = get_secondary_storage_for_lib_name(lib_name, env=env)
-    storage.config.Pack(lmdb, type_url_prefix="cxx.arctic.org")
-    lib_cfg.storage_ids.append(sid)
-
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def dynamic_schema_store(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = np.iinfo(np.int32).max  # TODO shouldn't be needed
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.allow_sparse = True
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_tick_store_set_tz(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.allow_sparse = True
-    lib_cfg.version.write_options.set_tz = True
-    lib_cfg.version.write_options.incomplete = True
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_version_store_extra(arcticc_native_local_lib_cfg_extra, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg_extra(), env=Defaults.ENV)
-    return arcticc["local.extra"]
-
-
-@pytest.fixture
-def lmdb_version_store_allows_pickling(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.use_norm_failure_handler_known_types = True
-    return arcticc[lib_name]
+def lmdb_version_store_allows_pickling(version_store_factory, lib_name):
+    return version_store_factory(use_norm_failure_handler_known_types=True, dynamic_strings=True)
 
 
 @pytest.fixture
@@ -332,288 +306,76 @@ def lmdb_version_store_no_symbol_list(version_store_factory):
 
 
 @pytest.fixture
-def lmdb_version_store_arcticc(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.symbol_list = True
-    return arcticc, lib_name
+def lmdb_version_store_tombstone_and_pruning(version_store_factory):
+    return version_store_factory(use_tombstones=True, prune_previous_version=True)
 
 
 @pytest.fixture
-def lmdb_version_store_tombstone_and_pruning(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.use_tombstones = True
-    lib_cfg.version.write_options.prune_previous_version = True
-    return arcticc[lib_name]
+def lmdb_version_store_tombstone(version_store_factory):
+    return version_store_factory(use_tombstones=True)
 
 
 @pytest.fixture
-def lmdb_version_store_tombstone(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.use_tombstones = True
-    return arcticc[lib_name]
+def lmdb_version_store_tombstone_and_sync_passive(version_store_factory):
+    return version_store_factory(use_tombstones=True, sync_passive=True)
 
 
 @pytest.fixture
-def lmdb_version_store_delayed_deletes(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.delayed_deletes = True
-    return arcticc[lib_name]
-
-
-# Note: The lmdb_version_store_with_write_option fixture essentially replaces all of these fixtures
-@pytest.fixture
-def lmdb_version_store_delayed_deletes_with_pruning_tombstones(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.delayed_deletes = True
-    lib_cfg.version.write_options.use_tombstones = True
-    lib_cfg.version.write_options.prune_previous_version = True
-    lib_cfg.version.symbol_list = True
-
-    return arcticc[lib_name]
+def lmdb_version_store_tombstone_and_sync_passive_and_prune(version_store_factory):
+    return version_store_factory(use_tombstones=True, sync_passive=True, prune_previous_version=True)
 
 
 @pytest.fixture
-def lmdb_version_store_ignore_order(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.ignore_sort_order = True
-
-    return arcticc[lib_name]
+def lmdb_version_store_ignore_order(version_store_factory):
+    return version_store_factory(ignore_sort_order=True)
 
 
 @pytest.fixture
-def lmdb_version_store_with_write_option(arcticc_native_local_lib_cfg, request, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    for option in request.param:
-        if option == "sync_passive.enabled":
-            setattr(lib_cfg.version.write_options.sync_passive, "enabled", True)
-        else:
-            setattr(lib_cfg.version.write_options, option, True)
-
-    return arcticc[lib_name]
+def lmdb_version_store_small_segment(version_store_factory):
+    return version_store_factory(column_group_size=1000, segment_row_size=1000, lmdb_config={"map_size": 2 ** 30})
 
 
 @pytest.fixture
-def lmdb_version_store_tombstone_and_sync_passive(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.use_tombstones = True
-    lib_cfg.version.write_options.sync_passive.enabled = True
-    return arcticc[lib_name]
+def lmdb_version_store_tiny_segment(version_store_factory):
+    return version_store_factory(column_group_size=2, segment_row_size=2, lmdb_config={"map_size": 2 ** 30})
 
 
 @pytest.fixture
-def s3_version_store(s3_store_factory):
-    return s3_store_factory()
+def lmdb_version_store_tiny_segment_dynamic(version_store_factory):
+    return version_store_factory(column_group_size=2, segment_row_size=2, dynamic_schema=True)
 
 
 @pytest.fixture
-def vast_version_store(lib_name):
-    arcticc = ArcticcMemConf(create_test_vast_cfg(lib_name=lib_name), env=Defaults.ENV)
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def s3_version_store_tombstones(s3_store_factory):
-    return s3_store_factory(use_tombstones=True)
-
-
-@pytest.fixture
-def s3_version_store_fixture(lib_name):
-    params = ["use_tombstones"]
-    return make_s3_fixture(lib_name, params)  # TODO: replace all make_s3_fixture with s3_store_factory
-
-
-@pytest.fixture
-def vast_version_store_fixture(lib_name):
-    params = ["use_tombstones"]
-    return make_vast_fixture(lib_name, params)
-
-
-@pytest.fixture
-def s3_version_store_fixture_prune_previous(lib_name):
-    params = ["use_tombstones", "prune_previous_version"]
-    return make_s3_fixture(lib_name, params)
-
-
-@pytest.fixture
-def s3_tick_store_set_tz(lib_name):
-    params = ["use_tombstones", "set_tz", "dynamic_schema", "allow_sparse", "incomplete"]
-    return make_s3_fixture(lib_name, params)
-
-
-@pytest.fixture
-def s3_tick_store_compact_dedup(lib_name):
-    params = [
-        "use_tombstones",
-        "set_tz",
-        "dynamic_schema",
-        "allow_sparse",
-        "incomplete",
-        "compact_incomplete_dedup_rows",
-    ]
-    return make_s3_fixture(lib_name, params)
-
-
-@pytest.fixture
-def mongo_store_factory(mongo_server_sess, lib_name):
-    """Similar capability to `s3_store_factory`, but uses a mongo store."""
-    used = {}
-    uri = "mongodb://{}:{}".format(mongo_server_sess.hostname, mongo_server_sess.port)
-    cfg_maker = partial(create_local_mongo_cfg, uri=uri)
-    try:
-        yield partial(_version_store_factory_body, used, cfg_maker, lib_name)
-    finally:
-        for lib in used.values():
-            lib.version_store.clear()
-
-
-@pytest.fixture
-def s3_dynamic_schema_store(lib_name):
-    params = ["use_tombstones", "dynamic_schema", "dynamic_strings"]
-    return make_s3_fixture(lib_name, params)
-
-
-@pytest.fixture
-def mongo_version_store(mongo_store_factory):
-    return mongo_store_factory()
-
-
-@pytest.fixture
-def mongo_version_store_tombstones(mongo_store_factory):
-    return mongo_store_factory(use_tombstones=True)
-
-
-@pytest.fixture
-def lmdb_version_store_small_segment(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = 1000
-    lib_cfg.version.write_options.segment_row_size = 1000
-
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_version_store_tiny_segment(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = 2
-    lib_cfg.version.write_options.segment_row_size = 2
-
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_version_store_tiny_segment_dynamic_string(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = 2
-    lib_cfg.version.write_options.segment_row_size = 2
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.dynamic_strings = True
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_version_store_tiny_segment_dynamic(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = 2
-    lib_cfg.version.write_options.segment_row_size = 2
-    lib_cfg.version.write_options.dynamic_schema = True
-
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def lmdb_version_store_tiny_segment_dynamic_dynamic_string(arcticc_native_local_lib_cfg, lib_name):
-    arcticc = ArcticcMemConf(arcticc_native_local_lib_cfg(lib_name), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.write_options.column_group_size = 2
-    lib_cfg.version.write_options.segment_row_size = 2
-    lib_cfg.version.write_options.dynamic_schema = True
-    lib_cfg.version.write_options.dynamic_strings = True
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def mongo_version_store_failure_sim(mongo_server_sess, lib_name):
-    uri = "mongodb://{}:{}".format(mongo_server_sess.hostname, mongo_server_sess.port)
-    arcticc = ArcticcMemConf(create_local_mongo_cfg(lib_name=lib_name, uri=uri), env=Defaults.ENV)
-    lib_cfg = get_lib_cfg(arcticc, Defaults.ENV, lib_name)
-    lib_cfg.version.failure_sim.write_failure_prob = 0.3
-    lib_cfg.version.failure_sim.read_failure_prob = 0.3
-    return arcticc[lib_name]
-
-
-@pytest.fixture
-def ut_small_all_version_store(arcticc_native_local_lib_cfg, lib_name):
-    cfg = arcticc_native_local_lib_cfg(lib_name)
-    lib = cfg.env_by_id[Defaults.ENV].lib_by_path[Defaults.LIB]
-    lib.version.write_options.column_group_size = 2
-    lib.version.write_options.segment_row_size = 2
-    return ArcticcMemConf(cfg=cfg, env=Defaults.ENV)[lib_name]
-
-
-@pytest.fixture
-def arcticc_native_test_lib_cfg(tmpdir):
-    def create():
-        lib_name = "test.example"
-        env_name = "research"
-        cfg = EnvironmentConfigsMap()
-        env = cfg.env_by_id[env_name]
-
-        lmdb = LmdbConfig()
-        lmdb.path = get_temp_dbdir(tmpdir)
-        sid, storage = get_storage_for_lib_name(lib_name, env)
-        storage.config.Pack(lmdb, type_url_prefix="cxx.arctic.org")
-
-        lib_desc = env.lib_by_path[lib_name]
-        lib_desc.storage_ids.append(sid)
-        lib_desc.name = lib_name
-        lib_desc.description = "A friendly config for testing"
-
-        version = lib_desc.version
-        version.write_options.column_group_size = 23
-        version.write_options.segment_row_size = 42
-
-        return cfg
+def one_col_df(*args, **kwargs):
+    def create(start=0) -> pd.DataFrame:
+        return pd.DataFrame({"x": np.arange(start, start + 10, dtype=np.int64)})
 
     return create
 
 
 @pytest.fixture
-def one_col_df(start=0):
-    # type: () -> DataFrame
-    return DataFrame({"x": np.arange(start, start + 10, dtype=np.int64)})
+def two_col_df(*args, **kwargs):
+    def create(start=0) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"x": np.arange(start, start + 10, dtype=np.int64), "y": np.arange(start + 10, start + 20, dtype=np.int64)}
+        )
+
+    return create
 
 
 @pytest.fixture
-def two_col_df(start=0):
-    # type: () -> DataFrame
-    return DataFrame(
-        {"x": np.arange(start, start + 10, dtype=np.int64), "y": np.arange(start + 10, start + 20, dtype=np.int64)}
-    )
+def three_col_df():
+    def create(start=0) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "x": np.arange(start, start + 10, dtype=np.int64),
+                "y": np.arange(start + 10, start + 20, dtype=np.int64),
+                "z": np.arange(start + 20, start + 30, dtype=np.int64),
+            },
+            index=np.arange(start, start + 10, dtype=np.int64),
+        )
 
-
-@pytest.fixture
-def three_col_df(start=0):
-    # type: () -> DataFrame
-    return DataFrame(
-        {
-            "x": np.arange(start, start + 10, dtype=np.int64),
-            "y": np.arange(start + 10, start + 20, dtype=np.int64),
-            "z": np.arange(start + 20, start + 30, dtype=np.int64),
-        },
-        index=np.arange(start, start + 10, dtype=np.int64),
-    )
+    return create
 
 
 def get_val(col):
