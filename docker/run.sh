@@ -31,8 +31,9 @@ source docker/${version}.versions
 image="$build_image"
 echo "Running $image"
 
+env_vars="-e SERVER_FIXTURES_MONGO_BIN=/apps/research/tools/mongo/4.2.22_el7/bin/mongod"
+
 # Activate interactive mode in tty only
-env_vars=""
 interactive="--rm"
 interactive_args=""
 if [[ $- == *i* ]] || [[ "${INTERACTIVE:-0}" == "1" ]]
@@ -63,7 +64,7 @@ then
 fi
 
 if [[ -v DEBUG_BUILD ]]; then
-    env_vars="-e DEBUG_BUILD=$DEBUG_BUILD"
+    env_vars="-e DEBUG_BUILD=$DEBUG_BUILD $env_vars"
 fi
 
 if [[ -v USE_SLAB_ALLOCATOR ]]; then
