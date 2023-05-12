@@ -19,7 +19,7 @@ ln -fs ../../docker/custom_cmakefiles/CMakeUserPresets_clion.json CMakeUserPrese
 
 # Mount the default build directory as a tmpfs to speed up builds
 mkdir -p /opt/arcticdb/arcticdb_link/cpp/out
-mount -t tmpfs -o size=10G tmpfs /opt/arcticdb/arcticdb_link/cpp/out
+mount -t tmpfs -o size=20G tmpfs /opt/arcticdb/arcticdb_link/cpp/out
 
 # Symlink to the .so from the python directory to facilitate running the Python tests
 cd /opt/arcticdb/arcticdb_link/python
