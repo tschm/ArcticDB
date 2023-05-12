@@ -19,7 +19,7 @@ from typing import Optional, Any, Dict
 
 from pytest_server_fixtures.base import get_ephemeral_port
 
-from arcticc.version_store.helper import create_test_lmdb_cfg, create_test_s3_cfg, create_test_mongo_config
+from arcticc.version_store.helper import create_test_lmdb_cfg, create_test_s3_cfg, create_test_mongo_cfg
 from arcticc.config import Defaults
 from arcticc.util.test import configure_test_logger, apply_lib_cfg
 from arcticc.version_store.helper import ArcticMemoryConfig

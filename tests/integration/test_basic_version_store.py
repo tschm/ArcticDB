@@ -12,7 +12,7 @@ from arcticc.pb2.descriptors_pb2 import NormalizationMetadata
 from collections import namedtuple
 from datetime import datetime, timedelta
 from numpy.testing import assert_array_equal
-from pandas.util.testing import assert_frame_equal, assert_series_equal
+from arcticdb.util.test import assert_frame_equal, assert_series_equal
 from pytz import timezone
 
 from arcticc.exceptions import ArcticNativeNotYetImplemented
@@ -1210,7 +1210,7 @@ def test_library_deletion_mongo(mongo_version_store):
     assert len(mongo_version_store.list_symbols()) == 2
     mongo_version_store.version_store.clear()
     assert len(mongo_version_store.list_symbols()) == 0
-    lib_tool = lmdb_version_store.library_tool()
+    lib_tool = mongo_version_store.library_tool()
     assert lib_tool.count_keys(KeyType.VERSION) == 0
     assert lib_tool.count_keys(KeyType.TABLE_INDEX) == 0
 
