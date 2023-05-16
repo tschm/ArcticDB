@@ -15,7 +15,7 @@ if _is_rewriting_enabled():
         _PatcherFinder(
             old_name="arcticc",
             new_name="arcticdb",
-            exclusions=("arcticcxx", "arcticc.pb2"),
+            exclusions=("arcticc.pb2",),
             explicit_mappings={
                 "arcticc.config": "man.arcticdb.config",
                 "arcticc.exceptions": "man.arcticdb.python_exceptions",

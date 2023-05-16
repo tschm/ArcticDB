@@ -1,6 +1,7 @@
 from urllib.parse import quote_plus
 
 from arcticdb.version_store.helper import *
+from arcticdb.version_store.helper import extract_lib_config as _extract_lib_config
 from arcticdb.version_store.helper import (
     ArcticMemoryConfig,
     ArcticcFileConfig,

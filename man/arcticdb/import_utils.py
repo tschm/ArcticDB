@@ -35,7 +35,7 @@ class PatcherFinder(importlib.abc.MetaPathFinder):
     def find_module(self, fullname, path=None):
         if fullname in self.explicit_mappings:
             return self
-        if fullname.startswith(self.old_name) and all(e not in fullname for e in self.exclusions):
+        if fullname.startswith(self.old_name + ".") and all(e not in fullname for e in self.exclusions):
             return self
         return None
 
@@ -48,12 +48,12 @@ class PatcherFinder(importlib.abc.MetaPathFinder):
         if fullname in self.explicit_mappings:
             patched_fullname = self.explicit_mappings[fullname]
         else:
-            patched_fullname = fullname.replace(self.old_name, self.new_name)
+            patched_fullname = fullname.replace(self.old_name, self.new_name, 1)
 
         try:
             m = importlib.import_module(patched_fullname)
         except Exception as e:
-            raise type(e)(str(e).replace(self.new_name, self.old_name))
+            raise type(e)(str(e).replace(self.new_name, self.old_name, 1))
 
         sys.modules[fullname] = m
 
