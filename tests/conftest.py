@@ -253,9 +253,13 @@ def lmdb_version_store(version_store_factory):
 
 @pytest.fixture
 def lmdb_version_store_ts_norm(version_store_factory):
-    normalizers = pytest.importorskip("ahl.mongo.mongoose.normalizers")
     try:
-        register_normalizer(normalizers.TimeSeriesNormalizer())
+        from ahl.mongo.mongoose.normalizers import TimeSeriesNormalizer
+    except:
+        pytest.fail("Cannot import from ahl.mongo - tests require man.core to be installed")
+
+    try:
+        register_normalizer(TimeSeriesNormalizer())
         yield lmdb_version_store(version_store_factory)
     finally:
         clear_registered_normalizers()

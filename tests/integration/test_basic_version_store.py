@@ -388,11 +388,14 @@ def test_update_date_range_dataframe(lmdb_version_store):
     np.testing.assert_array_equal(result["a"].values, [1, 32, 33, 34, 5])
 
 
-#  TODO currently skipped as ahl.timeseries not available without man.core
 def test_update_date_range_ahl_timeseries(lmdb_version_store_ts_norm):
-    timeseries = pytest.importorskip("ahl.timeseries")
     """Restrictive update - when date_range is specified ensure that we only touch values in that range. Timeframe
     version."""
+    try:
+        import ahl.timeseries as timeseries
+    except:
+        pytest.fail("Cannot import from ahl.timeseries - tests require man.core to be installed")
+
     # given
     datetimes = [datetime(2022, 6, 1) + timedelta(days=i) for i in range(5)]
     a = np.arange(1, len(datetimes) + 1)
