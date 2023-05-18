@@ -2,6 +2,7 @@ from urllib.parse import quote_plus
 
 from arcticdb.version_store.helper import *
 from arcticdb.version_store.helper import extract_lib_config as _extract_lib_config
+from arcticdb.version_store.helper import create_test_lmdb_cfg as create_local_lmdb_cfg
 from arcticdb.version_store.helper import (
     ArcticMemoryConfig,
     ArcticcFileConfig,

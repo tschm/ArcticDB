@@ -7,8 +7,6 @@ if _is_rewriting_enabled():
     from man.arcticdb.import_utils import PatcherFinder as _PatcherFinder
 
     from arcticdb import *  # KEEP ME, so that from arcticc import blah works
-    import man.arcticdb.python_exceptions as exceptions
-    import man.arcticdb.config as config
 
     _sys.meta_path.insert(
         0,
@@ -21,7 +19,9 @@ if _is_rewriting_enabled():
                 "arcticc.exceptions": "man.arcticdb.python_exceptions",
                 "arcticc.mongo_config_helper": "man.arcticdb.mongo_config_helper",
                 "arcticc.toolbox.config": "man.arcticdb.mongo_config_helper",
+                "arcticc.toolbox": "man.arcticdb.toolbox",
                 "arcticc.toolbox.storage": "man.arcticdb.toolbox.storage",
+                "arcticc.toolbox.loader": "man.arcticdb.toolbox.loader",
                 "arcticc.version_store": "man.arcticdb.version_store",
                 "arcticc.version_store.helper": "man.arcticdb.version_store.helper",
                 "arcticc.pb_util": "man.arcticdb.pb_util",

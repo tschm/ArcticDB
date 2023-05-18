@@ -4,6 +4,7 @@ import shutil
 
 import boto3
 import werkzeug
+from arcticdb.version_store.helper import get_lib_cfg
 from moto.server import DomainDispatcherApplication, create_backend_app
 
 import signal
@@ -187,6 +188,11 @@ def version_store_factory(lib_name, tmpdir):
             result._library = None
 
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.fixture
+def dynamic_schema_store(version_store_factory):
+    return version_store_factory(dynamic_schema=True, column_group_size=np.iinfo(np.int32).max, allow_sparse=True)
 
 
 @pytest.fixture

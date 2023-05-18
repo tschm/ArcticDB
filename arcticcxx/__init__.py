@@ -7,7 +7,6 @@ if _is_arcticdb_enabled():
     from man.arcticdb.import_utils import PatcherFinder as _PatcherFinder
 
     from arcticdb_ext import *  # KEEP ME, so that from arcticcxx import blah works
-    import man.arcticdb.cpp_exceptions as exceptions
 
     _sys.meta_path.insert(
         0,
