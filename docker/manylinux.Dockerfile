@@ -8,7 +8,7 @@ RUN update-ca-trust
 ADD withproxy /opt/bootstrap/
 ADD bootstrap/.curlrc /root/
 
-RUN /opt/bootstrap/withproxy yum install -y python3-devel openssh-clients
+RUN /opt/bootstrap/withproxy yum install -y python3-devel openssh-clients flex
 
 RUN rpm -Uvh --nodeps $(repoquery --location dropbear)
 RUN rpm -Uvh --nodeps $(repoquery --location libtommath)
