@@ -25,3 +25,5 @@ all_requirements.txt
 build_requirements.txt
 junit-tests-*.xml
 
+.hypothesis/
+.vim/
