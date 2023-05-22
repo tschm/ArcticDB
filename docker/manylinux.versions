@@ -1,6 +1,6 @@
 github_base_image=external-sandbox.docker.dev.ahl/ghcr.io/man-group/cibuildwheel_manylinux:2.12.1
 
 img_prefix=releases-docker.repo.prod.m/man/app/base/arcticdb_manylinux
-build_tag=1684409962
+build_tag=1684749665
 
 build_image=${img_prefix}:${build_tag}
