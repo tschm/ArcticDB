@@ -1,7 +1,7 @@
 // Docs: http://docs/core/mb2/adoption/#build-configuration-jenkinsfilemb2
 def BRANCH = env.BRANCH_NAME
 manBuild {
-    notifyOn = ['pegasus-next']
+    notifyOn = ['pegasus-current', 'pegasus-next']
     workflow = [
         manbuildPythonBuildStage(),
         manbuildPythonTestStage(),

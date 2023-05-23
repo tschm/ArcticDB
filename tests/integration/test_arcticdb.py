@@ -10,7 +10,7 @@ def get_arcticdb_version():
     version_lines = [l for l in lines if l.startswith("Version: ")]
     assert len(version_lines) == 1
     version_line = version_lines.pop()
-    version = version_line[len("Version: "):]
+    version = version_line[len("Version: ") :]
     return version
 
 

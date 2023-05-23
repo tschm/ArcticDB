@@ -68,4 +68,38 @@ class PatcherFinder(importlib.abc.MetaPathFinder):
 
 def is_arcticdb_enabled():
     setting = os.getenv("MAN_ARCTICDB_USE_ARCTICDB", "true")
-    return setting.lower() in ("true", "1", "on")
+    result = setting.lower() in ("true", "1", "on")
+    if result:
+        print("Using public ArcticDB. Set env var MAN_ARCTICDB_USE_ARCTICDB=false to use arcticc", file=sys.stderr)
+    else:
+        print(
+            "Using internal arcticc. Set env var MAN_ARCTICDB_USE_ARCTICDB=false to use public ArcticDB",
+            file=sys.stderr,
+        )
+    return result
+
+
+ARCTICC_RENAMER = PatcherFinder(
+    old_name="arcticc",
+    new_name="arcticdb",
+    exclusions=("arcticc.pb2",),
+    explicit_mappings={
+        "arcticc.config": "man.arcticdb.config",
+        "arcticc.exceptions": "man.arcticdb.python_exceptions",
+        "arcticc.mongo_config_helper": "man.arcticdb.mongo_config_helper",
+        "arcticc.toolbox.config": "man.arcticdb.mongo_config_helper",
+        "arcticc.toolbox": "man.arcticdb.toolbox",
+        "arcticc.toolbox.storage": "man.arcticdb.toolbox.storage",
+        "arcticc.toolbox.loader": "man.arcticdb.toolbox.loader",
+        "arcticc.version_store": "man.arcticdb.version_store",
+        "arcticc.version_store.helper": "man.arcticdb.version_store.helper",
+        "arcticc.pb_util": "man.arcticdb.pb_util",
+    },
+)
+
+ARCTICCXX_RENAMER = PatcherFinder(
+    old_name="arcticcxx",
+    new_name="arcticdb_ext",
+    exclusions=(),
+    explicit_mappings={"arcticcxx.exceptions": "man.arcticdb.cpp_exceptions"},
+)
