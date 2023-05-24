@@ -66,16 +66,22 @@ class PatcherFinder(importlib.abc.MetaPathFinder):
         return m
 
 
+ever_printed = False
+
+
 def is_arcticdb_enabled():
-    setting = os.getenv("MAN_ARCTICDB_USE_ARCTICDB", "true")
+    setting = os.getenv("MAN_ARCTICDB_USE_ARCTICDB", "false")
     result = setting.lower() in ("true", "1", "on")
-    if result:
-        print("Using public ArcticDB. Set env var MAN_ARCTICDB_USE_ARCTICDB=false to use arcticc", file=sys.stderr)
-    else:
-        print(
-            "Using internal arcticc. Set env var MAN_ARCTICDB_USE_ARCTICDB=true to use public ArcticDB",
-            file=sys.stderr,
-        )
+    global ever_printed
+    if not ever_printed:
+        ever_printed = True
+        if result:
+            print("Using public ArcticDB. Set env var MAN_ARCTICDB_USE_ARCTICDB=false to use arcticc", file=sys.stderr)
+        else:
+            print(
+                "Using internal arcticc. Set env var MAN_ARCTICDB_USE_ARCTICDB=true to use public ArcticDB",
+                file=sys.stderr,
+            )
     return result
 
 
