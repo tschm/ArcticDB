@@ -73,7 +73,7 @@ def is_arcticdb_enabled():
         print("Using public ArcticDB. Set env var MAN_ARCTICDB_USE_ARCTICDB=false to use arcticc", file=sys.stderr)
     else:
         print(
-            "Using internal arcticc. Set env var MAN_ARCTICDB_USE_ARCTICDB=false to use public ArcticDB",
+            "Using internal arcticc. Set env var MAN_ARCTICDB_USE_ARCTICDB=true to use public ArcticDB",
             file=sys.stderr,
         )
     return result
