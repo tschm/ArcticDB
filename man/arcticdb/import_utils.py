@@ -71,7 +71,6 @@ ever_printed = False
 
 def is_arcticdb_enabled():
     setting = os.getenv("MAN_ARCTICDB_USE_ARCTICDB", "false")
-    print(f'MAN_ARCTICDB_USE_ARCTICDB={os.getenv("MAN_ARCTICDB_USE_ARCTICDB", "")}')
     result = setting.lower() in ("true", "1", "on")
     global ever_printed
     if not ever_printed:
