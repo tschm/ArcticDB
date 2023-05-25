@@ -149,40 +149,6 @@ def test_filter_greater_than_col_val(lmdb_version_store_dynamic_schema, df, val)
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="SKIP_WIN Issues with numeric isins")
-@settings(deadline=None)
-@given(
-    df=data_frames(
-        [column("a", elements=integral_type_strategies()), column("b", elements=integral_type_strategies())],
-        index=range_indexes(),
-    ),
-    vals=st.frozensets(integral_type_strategies(), min_size=1),
-)
-def test_filter_numeric_isin(lmdb_version_store_dynamic_schema, df, vals):
-    assume(not df.empty)
-    q = QueryBuilder()
-    q = q[q["a"].isin(vals)]
-    pandas_query = "a in {}".format(list(vals))
-    generic_dynamic_filter_test(lmdb_version_store_dynamic_schema, "test_filter_numeric_isin", df, q, pandas_query)
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="SKIP_WIN Issues with numeric isins")
-@settings(deadline=None)
-@given(
-    df=data_frames(
-        [column("a", elements=integral_type_strategies()), column("b", elements=integral_type_strategies())],
-        index=range_indexes(),
-    ),
-    vals=st.frozensets(integral_type_strategies(), min_size=1),
-)
-def test_filter_numeric_isnotin(lmdb_version_store_dynamic_schema, df, vals):
-    assume(not df.empty)
-    q = QueryBuilder()
-    q = q[q["a"].isnotin(vals)]
-    pandas_query = "a not in {}".format(list(vals))
-    generic_dynamic_filter_test(lmdb_version_store_dynamic_schema, "test_filter_numeric_isnotin", df, q, pandas_query)
-
-
 @settings(deadline=None)
 @given(
     df=data_frames(

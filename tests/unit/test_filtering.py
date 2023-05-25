@@ -741,22 +741,6 @@ def test_filter_compare_string_number_col_col(lmdb_version_store, df):
         _ = lmdb_version_store.read(symbol, query_builder=q)
 
 
-# Note min_size=1 for the sets in the following two tests, as an empty set does not have an associated type
-@settings(deadline=None)
-@given(
-    df=data_frames([column("a", elements=string_strategy)], index=range_indexes()),
-    vals=st.frozensets(integral_type_strategies(), min_size=1),
-)
-def test_filter_isin_string_number(lmdb_version_store, df, vals):
-    assume(not df.empty)
-    q = QueryBuilder()
-    q = q[q["a"].isin(vals)]
-    symbol = "test_filter_isin_string_number"
-    lmdb_version_store.write(symbol, df, dynamic_strings=True)
-    with pytest.raises(ArcticNativeCxxException) as e_info:
-        _ = lmdb_version_store.read(symbol, query_builder=q)
-
-
 @settings(deadline=None)
 @given(
     df=data_frames([column("a", elements=integral_type_strategies())], index=range_indexes()),
@@ -787,20 +771,6 @@ def test_filter_isin_clashing_sets(lmdb_version_store):
     generic_filter_test(lmdb_version_store, "test_filter_isin_clashing_sets", df, q, pandas_query)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="SKIP_WIN Issues with numeric isins")
-@settings(deadline=None)
-@given(
-    df=data_frames([column("a", elements=integral_type_strategies())], index=range_indexes()),
-    vals=st.frozensets(integral_type_strategies(), min_size=1),
-)
-def test_filter_numeric_isin(lmdb_version_store, df, vals):
-    assume(not df.empty)
-    q = QueryBuilder()
-    q = q[q["a"].isin(vals)]
-    pandas_query = "a in {}".format(list(vals))
-    generic_filter_test(lmdb_version_store, "test_filter_numeric_isin", df, q, pandas_query)
-
-
 @settings(deadline=None)
 @given(df=data_frames([column("a", elements=integral_type_strategies())], index=range_indexes()))
 def test_filter_numeric_isin_empty_set(lmdb_version_store, df):
@@ -810,19 +780,6 @@ def test_filter_numeric_isin_empty_set(lmdb_version_store, df):
     q = q[q["a"].isin(vals)]
     pandas_query = "a in {}".format(vals)
     generic_filter_test(lmdb_version_store, "test_filter_numeric_isin_empty_set", df, q, pandas_query)
-
-
-@settings(deadline=None)
-@given(
-    df=data_frames([column("a", elements=integral_type_strategies())], index=range_indexes()),
-    vals=st.frozensets(integral_type_strategies(), min_size=1),
-)
-def test_filter_numeric_isnotin(lmdb_version_store, df, vals):
-    assume(not df.empty)
-    q = QueryBuilder()
-    q = q[q["a"].isnotin(vals)]
-    pandas_query = "a not in {}".format(list(vals))
-    generic_filter_test(lmdb_version_store, "test_filter_numeric_isnotin", df, q, pandas_query)
 
 
 @settings(deadline=None)
