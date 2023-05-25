@@ -1,19 +1,10 @@
 import subprocess
-import sys
 import os
 import shutil
 import xml.etree.ElementTree
 from typing import Set
 
-
-def get_arcticdb_version():
-    info = subprocess.check_output([sys.executable, "-m", "pip", "show", "arcticdb"])
-    lines = info.decode().split("\n")
-    version_lines = [l for l in lines if l.startswith("Version: ")]
-    assert len(version_lines) == 1
-    version_line = version_lines.pop()
-    version = version_line[len("Version: ") :]
-    return version
+import arcticdb
 
 
 def clone_arcticdb(tmp_path, version):
@@ -60,8 +51,7 @@ IGNORED_FAILURES = {
 
 
 def test_arcticdb(tmp_path):
-    version = get_arcticdb_version()
-    clone_arcticdb(tmp_path, version)
+    clone_arcticdb(tmp_path, arcticdb.__version__)
     working_dir = os.getcwd()
 
     try:

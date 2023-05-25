@@ -7,6 +7,7 @@ manBuild {
         [name: 'man.build python test tests/unit', action: manbuildPythonTestStage(['MB_TEST_STAGE=unit', 'MB_TESTS=tests/unit']).action],
         [name: 'man.build python test tests/integration', action: manbuildPythonTestStage(['MB_TEST_STAGE=integration', 'MB_TESTS=tests/integration']).action],
         [name: 'man.build python test tests/nonreg', action: manbuildPythonTestStage(['MB_TEST_STAGE=nonreg', 'MB_TESTS=tests/nonreg']).action],
+        [name: 'man.build python test tests/arcticdb', action: manbuildPythonTestStage(['MB_TEST_STAGE=arcticdb', 'MB_TESTS=tests/arcticdb']).action],
         manbuildPythonCoverageStage(),
         manbuildPythonPublishStage(),
     ]
