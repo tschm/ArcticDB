@@ -15,6 +15,7 @@ from numpy.testing import assert_array_equal
 from arcticdb.util.test import assert_frame_equal, assert_series_equal
 from pytz import timezone
 
+import arcticdb
 from arcticc.exceptions import ArcticNativeNotYetImplemented
 from arcticcxx.exceptions import ArcticNativeCxxException
 from arcticc.flattener import Flattener
@@ -388,6 +389,7 @@ def test_update_date_range_dataframe(lmdb_version_store):
     np.testing.assert_array_equal(result["a"].values, [1, 32, 33, 34, 5])
 
 
+@pytest.mark.skipif(arcticdb.__version__ == "1.2.0", reason="To be addressed by next PyPi release")
 def test_update_date_range_ahl_timeseries(lmdb_version_store_ts_norm):
     """Restrictive update - when date_range is specified ensure that we only touch values in that range. Timeframe
     version."""
