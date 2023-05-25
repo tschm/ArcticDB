@@ -1,3 +1,8 @@
+import os
+
+os.environ["MAN_ARCTICDB_USE_ARCTICDB"] = "true"
+
+
 import functools
 import multiprocessing
 import shutil
@@ -10,7 +15,6 @@ from moto.server import DomainDispatcherApplication, create_backend_app
 import signal
 
 import time
-import os
 import pytest
 import numpy as np
 import pandas as pd

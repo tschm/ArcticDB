@@ -1,9 +1,10 @@
 # man.arcticdb
 
 This repository serves as a bridge between the external ArcticDB project published on PyPi and
-Github, and Man Group's internal Python and development environments. It also offers a backwards
-compatibility layer that redirects imports from the legacy `arcticc` project to the new, Github
-hosted, replacement, [ArcticDB](https://github.com/man-group/arcticdb).
+Github, and Man Group's internal Python and development environments. 
+
+It also offers a backwards compatibility layer that redirects imports from the legacy `arcticc` project to the new, 
+Github hosted, replacement, [ArcticDB](https://github.com/man-group/arcticdb).
 
 ## Developer Tooling
 
@@ -25,15 +26,16 @@ git remote set-url origin <URL with your username and token with write access>
 
 See [the wiki](https://manwiki.maninvestments.com/display/AlphaTech/ArcticDB+Development+Setup).
 
-## WIP Compatibility Layer
+## Compatibility Layer
 
-`man.arcticdb` pulls in the `ArcticDB` wheel. A project may depend on at most one of `man.arcticdb`,
-`arcticc`, or `ArcticDB`.
+`man.arcticdb` pulls in the `ArcticDB` wheel.
 
 This repo provides an API backwards-compatibility bridge between `arcticc` and `ArcticDB` so that
 Man users can pick up `ArcticDB` changes without making changes to their own code.
 
-It redirects Python imports from `arcticc` and `arcticcxx` to their replacements in `ArcticDB`, 
+Currently, `ArcticDB` is used if and only if the environment variable `MAN_ARCTICDB_USE_ARCTICDB=true`.
+
+The bridge redirects Python imports from `arcticc` and `arcticcxx` to their replacements in `ArcticDB`, 
 `arcticdb` and `arcticdb_ext`.
 
 The build also runs tests against the `arcticdb` wheel that Man grabs
@@ -45,15 +47,18 @@ These are:
 - Additional Man-specific non-regression tests (nonreg) that we cannot put in the public Github repo.
 - API compatibility tests to verify compatibility with the `arcticc` API.
 
-### TODO
+### Running compatibility tests locally
 
-- Add simple arcticc API compat tests.
-- Implement the shim. Note that some code eg these [creds](https://mangit.maninvestments.com/projects/DATA/repos/arcticc/browse/arcticc/config.py#57-60)
-have not survived the move and we need to do something about them to keep existing `arcticc` consumers happy.
-- Extend API compat tests.
-- Add nonreg tests.
-- Replace `arcticc` [dependencies](https://docs.maninvestments.com/core/packages/internal/arcticc/)
-in Man Group with `man.arcticdb` dependencies.
+The tests for the `man.arcticdb` bridge are in `./tests`. To run them, first set the environment variable
 
-Remember to add merge checks to this repo.
+```
+MAN_ARCTICDB_USE_ARCTICDB=true
+```
 
+Then do the usual:
+
+```
+python setup.py develop test
+```
+
+in a fresh Pegasus venv.
