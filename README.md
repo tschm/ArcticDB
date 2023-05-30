@@ -49,13 +49,9 @@ These are:
 
 ### Running compatibility tests locally
 
-The tests for the `man.arcticdb` bridge are in `./tests`. To run them, first set the environment variable
+The tests for the `man.arcticdb` bridge are in `./tests`.
 
-```
-MAN_ARCTICDB_USE_ARCTICDB=true
-```
-
-Then do the usual:
+Run them with the usual:
 
 ```
 python setup.py develop test
