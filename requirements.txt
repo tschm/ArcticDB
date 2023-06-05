@@ -1,0 +1,9 @@
+man.core
+boto3
+werkzeug
+moto
+flask
+pytest_server_fixtures
+packaging
+
+hypothesis
