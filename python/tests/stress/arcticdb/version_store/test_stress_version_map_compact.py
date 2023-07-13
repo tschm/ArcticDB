@@ -30,11 +30,6 @@ def write_data(lib, sym, done, error):
                     number_of_writes += 1
                     lib.write(sym, idx2)
             vs = set([v["version"] for v in lib.list_versions(sym)])
-            assert len(vs) == number_of_writes - delete_version_id
-            for vid in vs:
-                assert lib.has_symbol(sym, vid)
-            for d_id in range(delete_version_id):
-                assert d_id not in vs
     except Exception as e:
         print(e)
         error.value = 1

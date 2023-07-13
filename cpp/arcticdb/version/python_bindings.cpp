@@ -103,6 +103,7 @@ void register_bindings(py::module &version, py::exception<arcticdb::ArcticExcept
 
     py::class_<ReadOptions>(version, "PythonVersionStoreReadOptions")
         .def(py::init())
+        .def("set_read_previous_on_failure", &ReadOptions::set_read_previous_on_failure)
         .def("set_force_strings_to_object", &ReadOptions::set_force_strings_to_object)
         .def("set_dynamic_schema", &ReadOptions::set_dynamic_schema)
         .def("set_allow_sparse", &ReadOptions::set_allow_sparse)

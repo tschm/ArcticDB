@@ -230,7 +230,8 @@ inline std::vector<folly::Future<std::optional<AtomKey>>> batch_get_versions_asy
     const std::shared_ptr<Store>& store,
     const std::shared_ptr<VersionMap>& version_map,
     const std::vector<StreamId>& symbols,
-    const std::vector<pipelines::VersionQuery>& version_queries) {
+    const std::vector<pipelines::VersionQuery>& version_queries,
+    const std::optional<bool>& use_previous_on_error) {
     ARCTICDB_SAMPLE(BatchGetVersion, 0)
     util::check(symbols.size() == version_queries.size(), "Symbol and version query list mismatch: {} != {}", symbols.size(), version_queries.size());
 
@@ -251,6 +252,10 @@ inline std::vector<folly::Future<std::optional<AtomKey>>> batch_get_versions_asy
         const auto it = version_data.find(*symbol);
         util::check(it != version_data.end(), "Missing version data for symbol {}", *symbol);
         auto version_entry_fut = folly::Future<std::shared_ptr<VersionMapEntry>>::makeEmpty();
+
+        if(use_previous_on_error.value_or(false))
+            it->second.load_param_.use_previous_ = true;
+
         if(it->second.count_ == 1) {
             version_entry_fut = async::submit_io_task(CheckReloadTask{store, version_map, *symbol, it->second.load_param_});
         } else {

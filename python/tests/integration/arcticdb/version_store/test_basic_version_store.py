@@ -2011,3 +2011,68 @@ def test_get_existing_columns_in_series(lmdb_version_store, sym):
     assert not lmdb_version_store.read(sym, columns=["col1", "col2"]).data.empty
     if __name__ == "__main__":
         pytest.main()
+
+
+def test_use_previous_on_failure_single(lmdb_version_store):
+    lib = lmdb_version_store
+    idx = pd.date_range("2022-01-01", periods=10, freq="D")
+    l = len(idx)
+    df1 = pd.DataFrame({"a": range(l), "b": range(1, l + 1), "c": range(2, l + 2)}, index=idx)
+
+    lib.write("symbol", df1)
+
+    v1_write_time = pd.Timestamp.now()
+    time.sleep(1)
+    df2 = pd.DataFrame({"d": range(1, l + 1), "e": range(2, l + 2), "f": range(3, l + 3)}, index=idx)
+    lib.write("symbol", df2)
+
+    lib_tool = lmdb_version_store.library_tool()
+    version_keys = lib_tool.find_keys_for_id(KeyType.VERSION, "symbol")
+    assert len(version_keys) == 2
+    version_keys.sort(key=lambda k: k.creation_ts)
+
+    lib_tool.remove(version_keys[1])
+    version_keys = lib_tool.find_keys_for_id(KeyType.VERSION, "symbol")
+    assert len(version_keys) == 1
+    assert version_keys[0].version_id == 0
+
+    vit = lib.read("symbol", read_previous_on_failure=True, as_of=pd.Timestamp(v1_write_time))
+    assert_frame_equal(df1, vit.data)
+
+
+def test_use_previous_on_failure_batch(lmdb_version_store):
+    lib = lmdb_version_store
+
+    expected = []
+    write_times = []
+    lib_tool = lmdb_version_store.library_tool()
+    num_items = 10
+
+    for x in range(num_items):
+        idx = pd.date_range("2022-01-01", periods=10, freq="D")
+        l = len(idx)
+        df1 = pd.DataFrame({"a": range(l), "b": range(x, l + x), "c": range(x, l + x)}, index=idx)
+        symbol = "symbol_{}".format(x)
+
+        lib.write(symbol, df1)
+
+        write_times.append(pd.Timestamp.now())
+        expected.append(df1)
+        time.sleep(1)
+        df2 = pd.DataFrame(
+            {"d": range(x + 1, l + x + 1), "e": range(x + 2, l + x + 2), "f": range(x + 3, l + x + 3)}, index=idx
+        )
+        lib.write(symbol, df2)
+
+        version_keys = lib_tool.find_keys_for_id(KeyType.VERSION, symbol)
+        assert len(version_keys) == 2
+        version_keys.sort(key=lambda k: k.creation_ts)
+
+        lib_tool.remove(version_keys[1])
+        version_keys = lib_tool.find_keys_for_id(KeyType.VERSION, symbol)
+        assert len(version_keys) == 1
+        assert version_keys[0].version_id == 0
+
+    vits = lib.batch_read(symbol, read_previous_on_failure=True, as_ofs=write_times)
+    for x in range(num_items):
+        assert_frame_equal(vits[x].data, expected[x])

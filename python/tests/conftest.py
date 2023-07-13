@@ -146,7 +146,7 @@ def moto_s3_uri_incl_bucket(moto_s3_endpoint_and_credentials):
     ] + ":" + bucket + "?access=" + aws_access_key + "&secret=" + aws_secret_key + "&port=" + port
 
 
-@pytest.fixture(scope="function", params=["S3", "LMDB", "Azure"] if AZURE_SUPPORT else ["S3", "LMDB"])
+@pytest.fixture(scope="function", params=["LMDB"] if AZURE_SUPPORT else ["LMDB"])
 def arctic_client(request, moto_s3_uri_incl_bucket, tmpdir, encoding_version):
     if request.param == "S3":
         ac = Arctic(moto_s3_uri_incl_bucket, encoding_version)

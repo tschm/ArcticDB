@@ -68,18 +68,29 @@ inline entity::VariantKey write_multi_index_entry(
     return multi_key_fut.wait().value();
 }
 
+struct LoadProgress {
+    VersionId loaded_until_ = std::numeric_limits<VersionId>::max();
+    VersionId oldest_loaded_index_version_ = std::numeric_limits<VersionId>::max();
+    timestamp earliest_loaded_timestamp_ = std::numeric_limits<timestamp>::max();
+};
+
 inline std::optional<AtomKey> read_segment_with_keys(
     const SegmentInMemory &seg,
     VersionMapEntry &entry,
-    VersionId& oldest_loaded_index) {
+    LoadProgress& load_progress) {
     ssize_t row = 0;
     std::optional<AtomKey> next;
+    VersionId oldest_loaded_index = std::numeric_limits<VersionId>::max();
+    timestamp earliest_loaded_timestamp = std::numeric_limits<timestamp>::max();
+
     for (; row < ssize_t(seg.row_count()); ++row) {
         auto key = read_key_row(seg, row);
         ARCTICDB_TRACE(log::version(), "Reading key {}", key);
+
         if (is_index_key_type(key.type())) {
             entry.keys_.push_back(key);
             oldest_loaded_index = std::min(oldest_loaded_index, key.version_id());
+            earliest_loaded_timestamp = std::min(earliest_loaded_timestamp, key.creation_ts());
         } else if (key.type() == KeyType::TOMBSTONE) {
             entry.tombstones_.try_emplace(key.version_id(), key);
             entry.keys_.push_back(key);
@@ -96,14 +107,17 @@ inline std::optional<AtomKey> read_segment_with_keys(
         }
     }
     util::check(row == ssize_t(seg.row_count()), "Unexpected ordering in journal segment");
+    load_progress.loaded_until_ = oldest_loaded_index;
+    load_progress.oldest_loaded_index_version_ = std::min(load_progress.oldest_loaded_index_version_, load_progress.loaded_until_);
+    load_progress.earliest_loaded_timestamp_ = std::min(load_progress.earliest_loaded_timestamp_, earliest_loaded_timestamp);
     return next;
 }
 
 inline std::optional<AtomKey> read_segment_with_keys(
     const SegmentInMemory &seg,
     const std::shared_ptr<VersionMapEntry> &entry,
-    VersionId& oldest_loaded_index) {
-    return read_segment_with_keys(seg, *entry, oldest_loaded_index);
+    LoadProgress& load_progress) {
+    return read_segment_with_keys(seg, *entry, load_progress);
 }
 
 template<class Predicate>
@@ -111,7 +125,7 @@ std::shared_ptr<VersionMapEntry> build_version_map_entry_with_predicate_iteratio
     const std::shared_ptr<StreamSource> &store,
     Predicate &&predicate,
     const StreamId &stream_id,
-    std::vector<KeyType> key_types,
+    const std::vector<KeyType>& key_types,
     bool perform_read_segment_with_keys = true) {
 
     auto prefix = std::holds_alternative<StringId>(stream_id) ? std::get<StringId>(stream_id) : std::string();
@@ -128,8 +142,8 @@ std::shared_ptr<VersionMapEntry> build_version_map_entry_with_predicate_iteratio
                                 ARCTICDB_DEBUG(log::storage(), "Version map iterating key {}", key);
                                 if (perform_read_segment_with_keys) {
                                     auto [kv, seg] = store->read_sync(to_atom(key));
-                                    VersionId version_id{};
-                                    read_segment_with_keys(seg, output, version_id);
+                                    LoadProgress load_progress;
+                                    (void)read_segment_with_keys(seg, output, load_progress);
                                 }
                             },
                             prefix);
@@ -177,21 +191,26 @@ inline std::optional<RefKey> get_symbol_ref_key(
     return std::make_optional(std::move(ref_key));
 }
 
-inline void read_symbol_ref(std::shared_ptr<StreamSource> store, const StreamId &stream_id, VersionMapEntry &entry) {
+inline void read_symbol_ref(const std::shared_ptr<StreamSource>& store, const StreamId &stream_id, VersionMapEntry &entry) {
     auto maybe_ref_key = get_symbol_ref_key(store, stream_id);
     if (!maybe_ref_key)
         return;
 
     auto [key, seg] = store->read_sync(maybe_ref_key.value());
-    VersionId version_id{};
-    entry.head_ = read_segment_with_keys(seg, entry, version_id);
+
+    LoadProgress load_progress;
+    entry.head_ = read_segment_with_keys(seg, entry, load_progress);
 }
 
 inline void write_symbol_ref(std::shared_ptr<StreamSink> store,
                              const AtomKey &latest_index,
+                             const std::optional<AtomKey>& previous_key,
                              const AtomKey &journal_key) {
     check_is_index_or_tombstone(latest_index);
     check_is_version(journal_key);
+    if(previous_key)
+        check_is_index_or_tombstone(*previous_key);
+
     ARCTICDB_DEBUG(log::version(), "Version map writing symbol ref for latest index: {} journal key {}", latest_index,
                    journal_key);
 
@@ -200,6 +219,9 @@ inline void write_symbol_ref(std::shared_ptr<StreamSink> store,
         store->write_sync(KeyType::VERSION_REF, latest_index.id(), std::move(segment));
     });
     ref_agg.add_key(latest_index);
+    if(previous_key && is_index_key_type(latest_index.type()))
+        ref_agg.add_key(*previous_key);
+
     ref_agg.add_key(journal_key);
     ref_agg.commit();
     ARCTICDB_DEBUG(log::version(), "Done writing symbol ref for key: {}", journal_key);
@@ -215,34 +237,47 @@ inline std::optional<VersionId> get_version_id_negative_index(VersionId latest, 
 
 std::unordered_map<StreamId, size_t> get_num_version_entries(const std::shared_ptr<Store> &store, size_t batch_size);
 
-inline bool need_to_load_further(const LoadParameter &load_params,
-                                 VersionId loaded_until,
-                                 const std::optional<VersionId>& latest_version) {
-    if (!load_params.load_until_)
-        return true;
-
+inline bool loaded_until_version_id(const LoadParameter &load_params, const LoadProgress& load_progress) {
+    if (!load_params.load_until_ || load_progress.loaded_until_ > load_params.load_until_.value())
+        return false;
++
     if (load_params.load_until_.value() >= 0) {
-        if (loaded_until > static_cast<VersionId>(load_params.load_until_.value())) {
-            return true;
+        if (load_progress.loaded_until_ > static_cast<VersionId>(load_params.load_until_.value())) {
+            return false;
         }
     } else {
         if (latest_version.has_value()) {
             auto opt_version_id = get_version_id_negative_index(latest_version.value(), *load_params.load_until_);
             if (opt_version_id.has_value()) {
                 if (loaded_until > *opt_version_id) {
-                    return true;
+                    return false;
                 }
             }
         } else {
-            return true;
+            return false;
         }
     }
     ARCTICDB_DEBUG(log::version(),
-                   "Exiting load downto because loaded to version {} for request {} with {} total versions",
-                   loaded_until,
-                   *load_params.load_until_,
-                   latest_version.value());
-    return false;
+                   "Exiting load downto because request {} <= {}",
+                   load_params.load_until_.value(),
+                   load_progress.loaded_until_);
+    return true;
+}
+
+
+static constexpr timestamp nanos_to_seconds(timestamp nanos) {
+    return nanos / timestamp(10000000000);
+}
+
+inline bool loaded_until_timestamp(const LoadParameter &load_params, const LoadProgress& load_progress) {
+    if (!load_params.load_from_time_ || nanos_to_seconds(load_progress.earliest_loaded_timestamp_) > load_params.load_from_time_.value())
+        return false;
+
+    ARCTICDB_DEBUG(log::version(),
+                   "Exiting load from timestamp because request {} <= {}",
+                   load_params.load_from_time_.value(),
+                   load_progress.earliest_loaded_timestamp_);
+    return true;
 }
 
 inline bool load_latest_ongoing(const LoadParameter &load_params, const std::shared_ptr<VersionMapEntry> &entry) {
@@ -254,19 +289,19 @@ inline bool load_latest_ongoing(const LoadParameter &load_params, const std::sha
     return false;
 }
 
-inline bool looking_for_undeleted(const LoadParameter& load_params, const std::shared_ptr<VersionMapEntry>& entry, const VersionId& oldest_loaded_index) {
+inline bool looking_for_undeleted(const LoadParameter& load_params, const std::shared_ptr<VersionMapEntry>& entry, const LoadProgress& load_progress) {
     if(load_params.load_type_ != LoadType::LOAD_UNDELETED) {
         return true;
     }
 
     if(entry->tombstone_all_) {
-        const bool is_deleted_by_tombstone_all = entry->tombstone_all_->version_id() >= oldest_loaded_index;
+        const bool is_deleted_by_tombstone_all = entry->tombstone_all_->version_id() >= load_progress.oldest_loaded_index_version_;
         if(is_deleted_by_tombstone_all) {
             ARCTICDB_DEBUG(
                 log::version(),
                 "Exiting because tombstone all key deletes all versions beyond: {} and the oldest loaded index has version: {}",
                 entry->tombstone_all_->version_id(),
-                oldest_loaded_index);
+                load_progress.oldest_loaded_index_version_);
             return false;
         } else {
             return true;
@@ -288,7 +323,7 @@ inline SortedValue deduce_sorted(SortedValue existing_frame, SortedValue input_f
     constexpr auto DESCENDING = SortedValue::DESCENDING;
     constexpr auto UNSORTED = SortedValue::UNSORTED;
 
-    auto final_state = UNSORTED;
+    SortedValue final_state;
     switch (existing_frame) {
     case UNKNOWN:
         if (input_frame != UNSORTED) {

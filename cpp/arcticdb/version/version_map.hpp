@@ -37,6 +37,30 @@
 
 namespace arcticdb {
 
+inline bool key_exists_in_ref_entry(const LoadParameter& load_params, const VersionMapEntry& ref_entry, std::optional<AtomKey>& cached_penultimate_key, LoadProgress& load_progress) {
+    if (is_latest_load_type(load_params.load_type_) && is_index_key_type(ref_entry.keys_[0].type()))
+        return true;
+
+    if(cached_penultimate_key && is_partial_load_type(load_params.load_type_)) {
+        load_params.validate();
+        if(load_params.load_type_ == LoadType::LOAD_DOWNTO && cached_penultimate_key->version_id() <= load_params.load_until_.value()) {
+            load_progress.loaded_until_ = cached_penultimate_key->version_id();
+            return true;
+        }
+
+        if(load_params.load_type_ == LoadType::LOAD_FROM_TIME && nanos_to_seconds(cached_penultimate_key->creation_ts()) <= load_params.load_from_time_.value()) {
+            load_progress.loaded_until_ = cached_penultimate_key->version_id();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline void set_loaded_until(const LoadProgress& load_progress, const std::shared_ptr<VersionMapEntry>& entry) {
+    entry->loaded_until_ = load_progress.loaded_until_;
+}
+
 template<class Clock=util::SysClock>
 class VersionMapImpl {
     /*
@@ -146,33 +170,38 @@ public:
         const LoadParameter& load_params) const {
         auto next_key = ref_entry.head_;
         entry->head_ = ref_entry.head_;
-        auto loaded_until = std::numeric_limits<VersionId>::max();
-        VersionId oldest_loaded_index_version = std::numeric_limits<VersionId>::max();
-        std::optional<VersionId> latest_version;
 
-        if ((load_params.load_type_ == LoadType::LOAD_LATEST || load_params.load_type_ == LoadType::LOAD_LATEST_UNDELETED)
-            && is_index_key_type(ref_entry.keys_[0].type()))
-        {
+        std::optional<VersionId> latest_version;
+        LoadProgress load_progress;
+        util::check(ref_entry.keys_.size() >= 2, "Invalid empty ref entry");
+        const auto& initial_key =  ref_entry.keys_[0];
+        std::optional<AtomKey> cached_penultimate_index;
+        if(ref_entry.keys_.size() == 3) {
+            util::check(is_index_or_tombstone(ref_entry.keys_[1]), "Expected index key in as second item in 3-item ref key, got {}", entry->keys_[1]);
+            cached_penultimate_index = ref_entry.keys_[1];
+        }
+
+        if (key_exists_in_ref_entry(load_params, ref_entry, cached_penultimate_index, load_progress)) {
             entry->keys_.push_back(ref_entry.keys_[0]);
+            if(cached_penultimate_index)
+                entry->keys_.push_back(*cached_penultimate_index);
         } else {
             do {
-                auto [key, seg] = store->read_sync(next_key.value());
-                next_key = read_segment_with_keys(seg, entry, loaded_until);
-                oldest_loaded_index_version = std::min(oldest_loaded_index_version, loaded_until);
-                if (!latest_version.has_value()) {
-                    auto latest = entry->get_first_index(true);
-                    if (latest.has_value()) {
-                        latest_version = latest->version_id();
-                    }
+                try {
+                    auto [key, seg] = store->read_sync(next_key.value());
+                    next_key = read_segment_with_keys(seg, entry, load_progress);
+                } catch (const KeyNotFoundException&) {
+                    if(load_params.use_previous_ && *next_key == initial_key && cached_penultimate_index)
+                        next_key = *cached_penultimate_index;
+                    else throw;
                 }
             } while (next_key
-            && need_to_load_further(load_params, loaded_until, latest_version)
+            && !loaded_until_version_id(load_params, load_progress)
+            && !loaded_until_timestamp(load_params, load_progress)
             && load_latest_ongoing(load_params, entry)
-            && looking_for_undeleted(load_params, entry, oldest_loaded_index_version));
-
-            if(load_params.load_type_ == LoadType::LOAD_DOWNTO)
-                entry->loaded_until_ = loaded_until;
+            && looking_for_undeleted(load_params, entry, load_progress));
         }
+        set_loaded_until(load_progress, entry);
     }
 
     void load_via_ref_key(
@@ -231,7 +260,9 @@ public:
     }
 
     void write_version(std::shared_ptr<Store> store, const AtomKey &key) {
-        auto entry = check_reload(store, key.id(), LoadParameter{LoadType::LOAD_LATEST}, false, false, __FUNCTION__);
+        LoadParameter load_param{LoadType::LOAD_LATEST};
+        load_param.skip_compat_ = false;
+        auto entry = check_reload(store, key.id(), load_param,  __FUNCTION__);
 
         do_write(store, key, entry);
         if (validate_)
@@ -264,7 +295,7 @@ public:
     }
 
     std::string dump_entry(const std::shared_ptr<Store> store, const StreamId& stream_id) {
-        const auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, true, false, __FUNCTION__);
+        const auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, __FUNCTION__);
         return entry->dump();
     }
 
@@ -277,8 +308,6 @@ public:
                 store,
                 key.id(),
                 LoadParameter{LoadType::LOAD_UNDELETED},
-                true,
-                false,
                 __FUNCTION__);
         auto result = tombstone_from_key_or_all_internal(store, key.id(), previous_key, entry);
 
@@ -314,7 +343,7 @@ public:
 
     void compact_and_remove_deleted_indexes(std::shared_ptr<Store> store, StreamIdArg stream_id) {
         ARCTICDB_DEBUG(log::version(), "Version map compacting versions for stream {}", stream_id);
-        auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, true, false, __FUNCTION__);
+        auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, __FUNCTION__);
         if (!requires_compaction(entry))
             return;
 
@@ -438,7 +467,7 @@ public:
 
     void compact(std::shared_ptr<Store> store, StreamIdArg stream_id) {
         ARCTICDB_DEBUG(log::version(), "Version map compacting versions for stream {}", stream_id);
-        auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, true, false, __FUNCTION__);
+        auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, __FUNCTION__);
         if (entry->empty()) {
             log::version().warn("Entry is empty in compact");
             return;
@@ -460,7 +489,7 @@ public:
 
     void overwrite_symbol_tree(
             std::shared_ptr<Store> store, StreamIdArg stream_id, const std::vector<AtomKey>& index_keys) {
-        auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, true, false, __FUNCTION__);
+        auto entry = check_reload(store, stream_id, LoadParameter{LoadType::LOAD_ALL}, __FUNCTION__);
         auto old_entry = *entry;
         if (!index_keys.empty()) {
             entry->keys_.assign(std::begin(index_keys), std::end(index_keys));
@@ -480,18 +509,16 @@ public:
         std::shared_ptr<Store> store,
         StreamIdArg stream_id,
         const LoadParameter load_param,
-        bool skip_compat,
-        bool iterate_on_failure,
         const char* function ARCTICDB_UNUSED) {
         ARCTICDB_DEBUG(log::version(), "Check reload in function {}", function);
 
         if (has_cached_entry(stream_id, load_param))
             return get_entry(stream_id);
 
-        if (!skip_compat && !has_stored_entry(store, stream_id))
+        if (!load_param.skip_compat_ && !has_stored_entry(store, stream_id))
             do_backwards_compat_check(store, stream_id);
 
-        return storage_reload(store, stream_id, load_param, iterate_on_failure);
+        return storage_reload(store, stream_id, load_param, load_param.iterate_on_failure_);
     }
 
     void do_write(
@@ -503,7 +530,8 @@ public:
 
         auto journal_key = to_atom(std::move(journal_single_key(store, key, entry->head_)));
         write_to_entry(entry, key, journal_key);
-        write_symbol_ref(store, key, journal_key);
+        auto previous_index = entry->get_second_undeleted_index();
+        write_symbol_ref(store, key, previous_index, journal_key);
     }
 
     AtomKey write_tombstone(
@@ -518,7 +546,7 @@ public:
         auto tombstone = util::variant_match(key, [&stream_id, store, &creation_ts](const auto &k){
             return index_to_tombstone(k, stream_id, creation_ts.has_value() ? creation_ts.value() : store->current_timestamp());
         });
-        do_write(store, tombstone, entry);
+        do_write(store, tombstone,  entry);
         if(log_changes_)
             log_tombstone(store, tombstone.id(), tombstone.version_id());
 
@@ -637,7 +665,7 @@ private:
 
     AtomKey write_entry_to_storage(std::shared_ptr<Store> store, const StreamId &stream_id, VersionId version_id,
                                    const std::shared_ptr<VersionMapEntry> &entry) {
-        VariantKey journal_key;
+        AtomKey journal_key;
         entry->validate_types();
 
         IndexAggregator<RowCountIndex> version_agg(stream_id, [&store, &journal_key, &version_id, &stream_id](auto &&segment) {
@@ -648,7 +676,7 @@ private:
                     IndexValue(0),
                     IndexValue(0)};
 
-            journal_key = store->write_sync(pk, std::forward<SegmentInMemory>(segment));
+            journal_key = to_atom(store->write_sync(pk, std::forward<SegmentInMemory>(segment)));
         });
 
         for (const auto &key : entry->keys_) {
@@ -656,9 +684,9 @@ private:
         }
 
         version_agg.commit();
-        auto journal_atom_key =  to_atom(std::move(journal_key));
-        write_symbol_ref(store, *entry->keys_.cbegin(), journal_atom_key);
-        return journal_atom_key;
+        auto previous_index = entry->get_second_undeleted_index();
+        write_symbol_ref(store, *entry->keys_.cbegin(), previous_index, journal_key);
+        return journal_key;
     }
 
     bool has_stored_entry(std::shared_ptr<StreamSource> store, const StreamId &stream_id) const {
@@ -917,8 +945,6 @@ private:
                     store,
                     stream_id,
                     LoadParameter{LoadType::LOAD_UNDELETED},
-                    true,
-                    false,
                     __FUNCTION__);
         }
         if (!first_key_to_tombstone)
