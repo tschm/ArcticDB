@@ -37,29 +37,6 @@
 
 namespace arcticdb {
 
-inline bool key_exists_in_ref_entry(const LoadParameter& load_params, const VersionMapEntry& ref_entry, std::optional<AtomKey>& cached_penultimate_key, LoadProgress& load_progress) {
-    if (is_latest_load_type(load_params.load_type_) && is_index_key_type(ref_entry.keys_[0].type()))
-        return true;
-
-    if(cached_penultimate_key && is_partial_load_type(load_params.load_type_)) {
-        load_params.validate();
-        if(load_params.load_type_ == LoadType::LOAD_DOWNTO && cached_penultimate_key->version_id() <= load_params.load_until_.value()) {
-            load_progress.loaded_until_ = cached_penultimate_key->version_id();
-            return true;
-        }
-
-        if(load_params.load_type_ == LoadType::LOAD_FROM_TIME && nanos_to_seconds(cached_penultimate_key->creation_ts()) <= load_params.load_from_time_.value()) {
-            load_progress.loaded_until_ = cached_penultimate_key->version_id();
-            return true;
-        }
-    }
-
-    return false;
-}
-
-inline void set_loaded_until(const LoadProgress& load_progress, const std::shared_ptr<VersionMapEntry>& entry) {
-    entry->loaded_until_ = load_progress.loaded_until_;
-}
 
 template<class Clock=util::SysClock>
 class VersionMapImpl {
@@ -190,13 +167,14 @@ public:
                 try {
                     auto [key, seg] = store->read_sync(next_key.value());
                     next_key = read_segment_with_keys(seg, entry, load_progress);
+                    set_latest_version(entry, latest_version);
                 } catch (const KeyNotFoundException&) {
                     if(load_params.use_previous_ && *next_key == initial_key && cached_penultimate_index)
                         next_key = *cached_penultimate_index;
                     else throw;
                 }
             } while (next_key
-            && !loaded_until_version_id(load_params, load_progress)
+            && !loaded_until_version_id(load_params, load_progress, latest_version)
             && !loaded_until_timestamp(load_params, load_progress)
             && load_latest_ongoing(load_params, entry)
             && looking_for_undeleted(load_params, entry, load_progress));
@@ -626,7 +604,7 @@ private:
                 return false;
             }
             if (load_param.load_type_ == LoadType::LOAD_DOWNTO ) {
-                if (load_param.load_until_.value() >= 0) {
+                if (is_positive_version_query(load_param)) {
                     if (entry->second->loaded_until_ > static_cast<VersionId>(load_param.load_until_.value())) {
                         ARCTICDB_DEBUG(log::version(), "Not loaded as far as required value {}, only have {}",
                                        load_param.load_until_.value(), entry->second->loaded_until_);

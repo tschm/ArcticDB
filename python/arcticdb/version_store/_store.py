@@ -1080,7 +1080,8 @@ class NativeVersionStore:
         _check_batch_kwargs(NativeVersionStore.batch_read_metadata, NativeVersionStore.read_metadata, kwargs)
         results_dict = {}
         version_queries = self._get_version_queries(len(symbols), as_ofs, **kwargs)
-        for result in self.version_store.batch_read_metadata(symbols, version_queries):
+        read_options = self._get_read_options(**kwargs)
+        for result in self.version_store.batch_read_metadata(symbols, version_queries, read_options):
             vitem, udm = result
             meta = denormalize_user_metadata(udm, self._normalizer) if udm else None
             if vitem.symbol not in results_dict:
@@ -2423,7 +2424,7 @@ class NativeVersionStore:
         return self._process_info(symbol, dit, version)
 
     def batch_get_info(
-        self, symbols: List[str], as_ofs: Optional[List[VersionQueryInput]] = None
+        self, symbols: List[str], as_ofs: Optional[List[VersionQueryInput]] = None, **kwargs
     ) -> List[Dict[str, Any]]:
         """
         Returns descriptive data for a list of `symbols`.
@@ -2461,7 +2462,9 @@ class NativeVersionStore:
         version_queries = []
         for as_of in as_ofs_lists:
             version_queries.append(self._get_version_query(as_of))
-        list_descriptors = self.version_store.batch_read_descriptor(symbols, version_queries)
+
+        read_options = self._get_read_options(**kwargs)
+        list_descriptors = self.version_store.batch_read_descriptor(symbols, version_queries, read_options)
         args_list = list(zip(list_descriptors, symbols, version_queries, as_ofs_lists))
         list_infos = []
         for dit, symbol, version_query, as_of in args_list:

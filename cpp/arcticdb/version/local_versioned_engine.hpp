@@ -95,14 +95,9 @@ public:
 
     std::optional<VersionedItem> get_specific_version(
         const StreamId &stream_id,
-<<<<<<< HEAD
         SignedVersionId signed_version_id,
-        const VersionQuery& version_query);
-=======
-        VersionId version_id,
         const VersionQuery& version_query,
         const ReadOptions& read_options);
->>>>>>> b0b60ae (Add penultimate index key to ref key structure and retry logic)
 
     std::optional<VersionedItem> get_version_at_time(
         const StreamId& stream_id,
@@ -381,7 +376,6 @@ public:
 
     std::unordered_map<KeyType, std::pair<size_t, size_t>> scan_object_sizes();
     std::shared_ptr<Store>& _test_get_store() { return store_; }
-    AtomKey _test_write_segment(const std::string& symbol);
     void _test_set_validate_version_map() {
         version_map()->set_validate(true);
     }

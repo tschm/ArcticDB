@@ -71,20 +71,9 @@ inline std::vector<AtomKey> get_all_versions(
     const ReadOptions& read_option
     ) {
     ARCTICDB_SAMPLE(GetAllVersions, 0)
-<<<<<<< HEAD
-    const LoadParameter load_parameter(LoadType::LOAD_UNDELETED);
-    auto entry = version_map->check_reload(
-        store,
-        stream_id,
-        load_parameter,
-        skip_compat,
-        iterate_on_failure,
-        __FUNCTION__);
-=======
-    LoadParameter load_param{LoadType::LOAD_ALL};
+    LoadParameter load_param{LoadType::LOAD_UNDELETED};
     set_load_param_options(load_param, version_query, read_option);
     auto entry = version_map->check_reload(store, stream_id, load_param, __FUNCTION__);
->>>>>>> b0b60ae (Add penultimate index key to ref key structure and retry logic)
     return entry->get_indexes(false);
 }
 
@@ -94,9 +83,10 @@ inline std::optional<AtomKey> get_specific_version(
         const StreamId &stream_id,
         SignedVersionId signed_version_id,
         const pipelines::VersionQuery& version_query,
-        const ReadOptions& read_option
+        const ReadOptions& read_option,
         bool include_deleted = false) {
-    LoadParameter load_param{LoadType::LOAD_DOWNTO, SignedVersionId};
+    LoadParameter load_param{LoadType::LOAD_DOWNTO, signed_version_id};
+    auto entry = version_map->check_reload(store, stream_id, load_param, __FUNCTION__);
     set_load_param_options(load_param, version_query, read_option);
     VersionId version_id;
     if (signed_version_id >= 0) {
@@ -235,23 +225,24 @@ inline version_store::TombstoneVersionResult tombstone_version(
     return res;
 }
 
-inline std::optional<AtomKey> get_version_key_from_time_for_versions(
+inline std::optional<AtomKey> get_index_key_from_time(
     timestamp from_time,
-    const std::vector<AtomKey> &version_keys) {
-    // get_all_versions will hold the lock
-    // Version keys are sorted in reverse order
-    auto at_or_after = std::lower_bound(version_keys.begin(), version_keys.end(), from_time,
-                                        [](const AtomKey &v_key, timestamp cmp) {
-                                            return v_key.creation_ts() > cmp;
-                                        });
-    // If iterator points to the last element, we didn't have any versions before that or empty
-    if (at_or_after == version_keys.end()) {
+    const std::vector<AtomKey> &keys) {
+    auto at_or_after = std::lower_bound(
+        std::begin(keys),
+        std::end(keys),
+        from_time,
+        [](const AtomKey &v_key, timestamp cmp) {
+            return v_key.creation_ts() > cmp;
+        });
+    // If iterator points to the last element, we didn't have any versions before that
+    if (at_or_after == keys.end()) {
         return std::nullopt;
     }
     return *at_or_after;
 }
 
-inline std::optional<AtomKey> get_version_key_from_time(
+inline std::optional<AtomKey> load_index_key_from_time(
     const std::shared_ptr<Store> &store,
     const std::shared_ptr<VersionMap> &version_map,
     const StreamId &stream_id,
@@ -262,7 +253,7 @@ inline std::optional<AtomKey> get_version_key_from_time(
     set_load_param_options(load_param, version_query, read_options);
     auto entry = version_map->check_reload(store, stream_id, load_param, __FUNCTION__);
     auto indexes = entry->get_indexes(false);
-    return get_version_key_from_time_for_versions(from_time, indexes);
+    return get_index_key_from_time(from_time, indexes);
 }
 
 inline std::vector<AtomKey> get_index_and_tombstone_keys(

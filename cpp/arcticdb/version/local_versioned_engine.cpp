@@ -214,15 +214,13 @@ std::optional<VersionedItem> LocalVersionedEngine::get_specific_version(
     const VersionQuery& version_query,
     const ReadOptions& read_options) {
     ARCTICDB_RUNTIME_DEBUG(log::version(), "Command: get_specific_version");
-    auto key = ::arcticdb::get_specific_version(store(), version_map(), stream_id, signed_version_id, opt_true(version_query.skip_compat_),
-                                                   opt_true(version_query.iterate_on_failure_));
+    auto key = ::arcticdb::get_specific_version(store(), version_map(), stream_id, signed_version_id, version_query, read_options);
     if (!key) {
         VersionId version_id;
         if (signed_version_id >= 0) {
             version_id = static_cast<VersionId>(signed_version_id);
         } else {
-            auto opt_latest_key = ::arcticdb::get_latest_version(store(), version_map(), stream_id, opt_true(version_query.skip_compat_),
-                                                 opt_true(version_query.iterate_on_failure_));
+            auto opt_latest_key = ::arcticdb::get_latest_version(store(), version_map(), stream_id, version_query, read_options);
             if (opt_latest_key.has_value()) {
                 auto opt_version_id = get_version_id_negative_index(opt_latest_key->version_id(), signed_version_id);
                 if (opt_version_id.has_value()) {
@@ -259,29 +257,21 @@ std::optional<VersionedItem> LocalVersionedEngine::get_version_at_time(
     const ReadOptions& read_options
     ) {
 
-    auto version_key = get_version_key_from_time(store(), version_map(), stream_id, as_of, version_query, read_options);
-    std::optional<AtomKey> key;
-    if (!version_key) {
+    auto index_key = load_index_key_from_time(store(), version_map(), stream_id, as_of, version_query, read_options);
+    if (!index_key) {
         auto index_keys = get_index_keys_in_snapshots(store(), stream_id);
         auto vector_index_keys = std::vector<AtomKey>(index_keys.begin(), index_keys.end());
         std::sort(std::begin(vector_index_keys), std::end(vector_index_keys),
                   [](auto& k1, auto& k2) {return k1.creation_ts() > k2.creation_ts();});
-        key = get_version_key_from_time_for_versions(as_of, vector_index_keys);
-    } else {
-        auto version_id = version_key.value().version_id();
-        key = ::arcticdb::get_specific_version(store(), version_map(),
-            stream_id,
-            version_id,
-            version_query,
-            read_options);
+        index_key = get_index_key_from_time(as_of, vector_index_keys);
     }
 
-    if (!key) {
+    if (!index_key) {
         log::version().warn("read_dataframe_timestamp: version id not found for stream {} timestamp {}", stream_id, as_of);
         return std::nullopt;
     }
 
-    return VersionedItem(std::move(key.value()));
+    return VersionedItem(std::move(index_key.value()));
 }
 
 std::optional<VersionedItem> LocalVersionedEngine::get_version_from_snapshot(
@@ -1608,27 +1598,6 @@ void LocalVersionedEngine::force_release_lock(const StreamId& name) {
 
 WriteOptions LocalVersionedEngine::get_write_options() const  {
     return  WriteOptions::from_proto(cfg().write_options());
-}
-
-AtomKey LocalVersionedEngine::_test_write_segment(const std::string& symbol) {
-    auto wrapper = SinkWrapper(symbol, {
-        scalar_field(DataType::UINT64, "thing1"),
-        scalar_field(DataType::UINT64, "thing2"),
-        scalar_field(DataType::UINT64, "thing3"),
-        scalar_field(DataType::UINT64, "thing4")
-    });
-
-    for(size_t j = 0; j < 20; ++j ) {
-        wrapper.aggregator_.start_row(timestamp(j))([&](auto& rb) {
-            rb.set_scalar(1, j);
-            rb.set_scalar(2, j + 1);
-            rb.set_scalar(3, j + j);
-            rb.set_scalar(4, j * j);
-        });
-    }
-
-    wrapper.aggregator_.commit();
-    return to_atom(store()->write(KeyType::TABLE_DATA, VersionId{}, StreamId{symbol}, 0, 0, std::move(wrapper.segment())).get());
 }
 
 std::shared_ptr<VersionMap> LocalVersionedEngine::_test_get_version_map() {

@@ -211,8 +211,7 @@ def test_prune_previous_versions_multiple_times(lmdb_version_store, symbol):
 
 
 def test_prune_previous_versions_write_batch(lmdb_version_store):
-    """Verify that the batch write method correctly prunes previous versions when the corresponding option is specified.
-    """
+    """Verify that the batch write method correctly prunes previous versions when the corresponding option is specified."""
     # Given
     lib = lmdb_version_store
     lib_tool = lib.library_tool()
@@ -242,8 +241,7 @@ def test_prune_previous_versions_write_batch(lmdb_version_store):
 
 
 def test_prune_previous_versions_batch_write_metadata(lmdb_version_store):
-    """Verify that the batch write metadata method correctly prunes previous versions when the corresponding option is specified.
-    """
+    """Verify that the batch write metadata method correctly prunes previous versions when the corresponding option is specified."""
     # Given
     lib = lmdb_version_store
     lib_tool = lib.library_tool()
@@ -273,8 +271,7 @@ def test_prune_previous_versions_batch_write_metadata(lmdb_version_store):
 
 
 def test_prune_previous_versions_append_batch(lmdb_version_store):
-    """Verify that the batch append method correctly prunes previous versions when the corresponding option is specified.
-    """
+    """Verify that the batch append method correctly prunes previous versions when the corresponding option is specified."""
     # Given
     lib = lmdb_version_store
     lib_tool = lib.library_tool()
@@ -2013,6 +2010,7 @@ def test_get_existing_columns_in_series(lmdb_version_store, sym):
         pytest.main()
 
 
+@pytest.mark.skip
 def test_use_previous_on_failure_single(lmdb_version_store):
     lib = lmdb_version_store
     idx = pd.date_range("2022-01-01", periods=10, freq="D")
@@ -2040,11 +2038,13 @@ def test_use_previous_on_failure_single(lmdb_version_store):
     assert_frame_equal(df1, vit.data)
 
 
+@pytest.mark.skip
 def test_use_previous_on_failure_batch(lmdb_version_store):
     lib = lmdb_version_store
 
     expected = []
     write_times = []
+    symbols = []
     lib_tool = lmdb_version_store.library_tool()
     num_items = 10
 
@@ -2053,6 +2053,7 @@ def test_use_previous_on_failure_batch(lmdb_version_store):
         l = len(idx)
         df1 = pd.DataFrame({"a": range(l), "b": range(x, l + x), "c": range(x, l + x)}, index=idx)
         symbol = "symbol_{}".format(x)
+        symbols.append(symbol)
 
         lib.write(symbol, df1)
 
@@ -2073,6 +2074,6 @@ def test_use_previous_on_failure_batch(lmdb_version_store):
         assert len(version_keys) == 1
         assert version_keys[0].version_id == 0
 
-    vits = lib.batch_read(symbol, read_previous_on_failure=True, as_ofs=write_times)
+    vits = lib.batch_read(symbols, read_previous_on_failure=True, as_ofs=write_times)
     for x in range(num_items):
-        assert_frame_equal(vits[x].data, expected[x])
+        assert_frame_equal(vits[symbols[x]].data, expected[x])

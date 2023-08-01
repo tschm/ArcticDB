@@ -219,8 +219,8 @@ inline void write_symbol_ref(std::shared_ptr<StreamSink> store,
         store->write_sync(KeyType::VERSION_REF, latest_index.id(), std::move(segment));
     });
     ref_agg.add_key(latest_index);
-    if(previous_key && is_index_key_type(latest_index.type()))
-        ref_agg.add_key(*previous_key);
+    //if(previous_key && is_index_key_type(latest_index.type()))
+    //    ref_agg.add_key(*previous_key);
 
     ref_agg.add_key(journal_key);
     ref_agg.commit();
@@ -237,19 +237,22 @@ inline std::optional<VersionId> get_version_id_negative_index(VersionId latest, 
 
 std::unordered_map<StreamId, size_t> get_num_version_entries(const std::shared_ptr<Store> &store, size_t batch_size);
 
-inline bool loaded_until_version_id(const LoadParameter &load_params, const LoadProgress& load_progress) {
-    if (!load_params.load_until_ || load_progress.loaded_until_ > load_params.load_until_.value())
+inline bool is_positive_version_query(const LoadParameter& load_params) {
+    return load_params.load_until_.value() >= 0;
+}
+
+inline bool loaded_until_version_id(const LoadParameter &load_params, const LoadProgress& load_progress, const std::optional<VersionId>& latest_version) {
+    if (!load_params.load_until_)
         return false;
-+
-    if (load_params.load_until_.value() >= 0) {
+
+    if (is_positive_version_query(load_params)) {
         if (load_progress.loaded_until_ > static_cast<VersionId>(load_params.load_until_.value())) {
             return false;
         }
     } else {
         if (latest_version.has_value()) {
-            auto opt_version_id = get_version_id_negative_index(latest_version.value(), *load_params.load_until_);
-            if (opt_version_id.has_value()) {
-                if (loaded_until > *opt_version_id) {
+            if (auto opt_version_id = get_version_id_negative_index(latest_version.value(), *load_params.load_until_); opt_version_id) {
+                if (load_progress.loaded_until_ > *opt_version_id) {
                     return false;
                 }
             }
@@ -258,19 +261,28 @@ inline bool loaded_until_version_id(const LoadParameter &load_params, const Load
         }
     }
     ARCTICDB_DEBUG(log::version(),
-                   "Exiting load downto because request {} <= {}",
+                   "Exiting load downto because loaded to version {} for request {} with {} total versions",
+                   load_progress.loaded_until_,
                    load_params.load_until_.value(),
-                   load_progress.loaded_until_);
+                   latest_version.value()
+                  );
     return true;
 }
 
+inline void set_latest_version(const std::shared_ptr<VersionMapEntry>& entry, std::optional<VersionId>& latest_version) {
+    if (!latest_version) {
+        auto latest = entry->get_first_index(true);
+        if(latest)
+            latest_version = latest->version_id();
+    }
+}
 
 static constexpr timestamp nanos_to_seconds(timestamp nanos) {
     return nanos / timestamp(10000000000);
 }
 
 inline bool loaded_until_timestamp(const LoadParameter &load_params, const LoadProgress& load_progress) {
-    if (!load_params.load_from_time_ || nanos_to_seconds(load_progress.earliest_loaded_timestamp_) > load_params.load_from_time_.value())
+    if (!load_params.load_from_time_ || load_progress.earliest_loaded_timestamp_ > load_params.load_from_time_.value())
         return false;
 
     ARCTICDB_DEBUG(log::version(),
@@ -310,6 +322,39 @@ inline bool looking_for_undeleted(const LoadParameter& load_params, const std::s
         return true;
     }
 }
+
+inline bool penultimate_key_contains_required_version_id(const AtomKey& key, const LoadParameter& load_params) {
+    if(is_positive_version_query(load_params)) {
+        return key.version_id() <= static_cast<VersionId>(load_params.load_until_.value());
+    } else {
+        return *load_params.load_until_ == -1;
+    }
+}
+
+inline bool key_exists_in_ref_entry(const LoadParameter& load_params, const VersionMapEntry& ref_entry, std::optional<AtomKey>& cached_penultimate_key, LoadProgress& load_progress) {
+    if (is_latest_load_type(load_params.load_type_) && is_index_key_type(ref_entry.keys_[0].type()))
+        return true;
+
+    if(cached_penultimate_key && is_partial_load_type(load_params.load_type_)) {
+        load_params.validate();
+        if(load_params.load_type_ == LoadType::LOAD_DOWNTO && penultimate_key_contains_required_version_id(*cached_penultimate_key, load_params)) {
+            load_progress.loaded_until_ = cached_penultimate_key->version_id();
+            return true;
+        }
+
+        if(load_params.load_type_ == LoadType::LOAD_FROM_TIME &&cached_penultimate_key->creation_ts() <= load_params.load_from_time_.value()) {
+            load_progress.loaded_until_ = cached_penultimate_key->version_id();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline void set_loaded_until(const LoadProgress& load_progress, const std::shared_ptr<VersionMapEntry>& entry) {
+    entry->loaded_until_ = load_progress.loaded_until_;
+}
+
 
 void fix_stream_ids_of_index_keys(
     const std::shared_ptr<Store> &store,

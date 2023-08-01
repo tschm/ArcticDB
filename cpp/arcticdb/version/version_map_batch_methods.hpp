@@ -145,7 +145,7 @@ struct StreamVersionData {
             break;
         case LoadType::LOAD_DOWNTO:
             util::check(load_param_.load_until_.has_value(), "Expect LOAD_DOWNTO to have version specificed");
-            if ((specific_version.version_id_ >= 0 && load_param_.load_until_.value() >= 0) ||
+            if ((specific_version.version_id_ >= 0 && is_positive_version_query(load_param_)) ||
                     (specific_version.version_id_ < 0 && load_param_.load_until_.value() < 0)) {
                 load_param_.load_until_ = std::min(load_param_.load_until_.value(), specific_version.version_id_);
             } else {
@@ -210,7 +210,7 @@ inline std::optional<AtomKey> get_key_for_version_query(
             return find_index_key_for_version_id(version_id, version_map_entry);
         },
         [&version_map_entry] (const pipelines::TimestampVersionQuery& timestamp_version) -> std::optional<AtomKey> {
-            auto version_key = get_version_key_from_time_for_versions(timestamp_version.timestamp_, version_map_entry->get_indexes(false));
+            auto version_key = get_index_key_from_time(timestamp_version.timestamp_, version_map_entry->get_indexes(false));
             if(version_key.has_value()){
                 auto version_id = version_key.value().version_id();
                 return find_index_key_for_version_id(version_id, version_map_entry, false);
