@@ -385,6 +385,7 @@ def add_azure_library_to_env(
     description: Optional[bool] = None,
     with_prefix: Optional[bool] = True,
     ca_cert_path: str = "",
+    ca_cert_dir: str = "",
 ):
     env = cfg.env_by_id[env_name]
     sid, storage = get_azure_proto(
