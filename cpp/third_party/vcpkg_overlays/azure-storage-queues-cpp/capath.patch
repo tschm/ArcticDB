@@ -1,0 +1,53 @@
+diff --git a/sdk/core/azure-core/inc/azure/core/http/curl_transport.hpp b/sdk/core/azure-core/inc/azure/core/http/curl_transport.hpp
+index 87f2258a..a209b22f 100644
+--- a/sdk/core/azure-core/inc/azure/core/http/curl_transport.hpp
++++ b/sdk/core/azure-core/inc/azure/core/http/curl_transport.hpp
+@@ -68,6 +68,18 @@ namespace Azure { namespace Core { namespace Http {
+      *
+      */
+     std::string CAInfo;
++    /**
++     * @brief Path to a directory which holds PEM encoded file, containing the certificate authorities
++     * sent to libcurl handle directly.
++     *
++     * @remark The Azure SDK will not check if the path is valid or not.
++     *
++     * @remark The default is the built-in system specific path. More about this option:
++     * https://curl.se/libcurl/c/CURLOPT_CAPATH.html
++     *
++     */
++    std::string CAPath;
++
+     /**
+      * @brief All HTTP requests will keep the connection channel open to the service.
+      *
+diff --git a/sdk/core/azure-core/src/http/curl/curl.cpp b/sdk/core/azure-core/src/http/curl/curl.cpp
+index 0eff9640..56442d25 100644
+--- a/sdk/core/azure-core/src/http/curl/curl.cpp
++++ b/sdk/core/azure-core/src/http/curl/curl.cpp
+@@ -1225,6 +1225,7 @@ inline std::string GetConnectionKey(std::string const& host, CurlTransportOption
+ {
+   std::string key(host);
+   key.append(!options.CAInfo.empty() ? options.CAInfo : "0");
++  key.append(!options.CAPath.empty() ? options.CAPath : "0");
+   key.append(!options.Proxy.empty() ? options.Proxy : "0");
+   key.append(!options.SslOptions.EnableCertificateRevocationListCheck ? "1" : "0");
+   key.append(options.SslVerifyPeer ? "1" : "0");
+@@ -1378,6 +1379,17 @@ std::unique_ptr<CurlNetworkConnection> CurlConnectionPool::ExtractOrCreateCurlCo
+     }
+   }
+ 
++  if (!options.CAPath.empty())
++  {
++    if (!SetLibcurlOption(m_handle, CURLOPT_CAPATH, options.CAPath.c_str(), &result))
++    {
++      throw Azure::Core::Http::TransportException(
++          _detail::DefaultFailedToGetNewConnectionTemplate + hostDisplayName
++          + ". Failed to set CA path to:" + options.CAPath + ". "
++          + std::string(curl_easy_strerror(result)));
++    }
++  }
++
+   long sslOption = 0;
+   if (!options.SslOptions.EnableCertificateRevocationListCheck)
+   {
