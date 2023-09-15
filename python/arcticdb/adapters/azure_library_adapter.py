@@ -27,8 +27,8 @@ PARSED_QUERY = namedtuple("PARSED_QUERY", ["region"])
 @dataclass
 class ParsedQuery:
     Path_prefix: Optional[str] = None
-    CA_cert_path: str = "" # CURLOPT_CAINFO in curl
-    CA_cert_dir: str = "" # CURLOPT_CAPATH in curl
+    CA_cert_path: str = ""  # CURLOPT_CAINFO in curl
+    CA_cert_dir: str = ""  # CURLOPT_CAPATH in curl
     Container: Optional[str] = None
 
 
