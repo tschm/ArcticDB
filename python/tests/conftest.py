@@ -204,12 +204,12 @@ def azurite_azure_test_connection_setting(azurite_port, azurite_container, spawn
     _, _, ca_cert_path = temp_cert
     ca_cert_dir = os.path.dirname(ca_cert_path)
 
-    return endpoint, azurite_container, credential_name, credential_key, ca_cert_path
+    return endpoint, azurite_container, credential_name, credential_key, ca_cert_path, ca_cert_dir
 
 
 @pytest.fixture
 def azurite_azure_uri(azurite_azure_test_connection_setting):
-    (endpoint, container, credential_name, credential_key, ca_cert_path) = azurite_azure_test_connection_setting
+    (endpoint, container, credential_name, credential_key, ca_cert_path, _) = azurite_azure_test_connection_setting
     return f"azure://DefaultEndpointsProtocol=http;AccountName={credential_name};AccountKey={credential_key};BlobEndpoint={endpoint}/{credential_name};Container={container};CA_cert_path={ca_cert_path}"  # semi-colon at the end is not accepted by the sdk
 
 
@@ -247,7 +247,7 @@ def arcticdb_test_s3_config(moto_s3_endpoint_and_credentials):
 @pytest.fixture
 def arcticdb_test_azure_config(azurite_azure_test_connection_setting, azurite_azure_uri):
     def create(lib_name):
-        (endpoint, container, credential_name, credential_key, ca_cert_path) = azurite_azure_test_connection_setting
+        (_, container, credential_name, credential_key, ca_cert_path, ca_cert_dir) = azurite_azure_test_connection_setting
         return create_test_azure_cfg(
             lib_name=lib_name,
             credential_name=credential_name,
@@ -255,6 +255,7 @@ def arcticdb_test_azure_config(azurite_azure_test_connection_setting, azurite_az
             container_name=container,
             endpoint=azurite_azure_uri,
             ca_cert_path=ca_cert_path,
+            ca_cert_dir=ca_cert_dir,
         )
 
     return create
@@ -759,6 +760,8 @@ def temp_cert(temp_folder):
     server_cert.private_key_pem.write_to_path(key_file)
     server_cert.cert_chain_pems[0].write_to_path(cert_file)
     ca.cert_pem.write_to_path(client_cert_file)
+    # Create the sym link for curl CURLOPT_CAPATH option; rehash only available on openssl >=1.1.1
+    subprocess.run(f"ln -s \"{client_cert_file}\" \"$(openssl x509 -hash -noout -in \"{client_cert_file}\")\".0", cwd=temp_folder.name, shell=True)
     return key_file, cert_file, client_cert_file
 
 @pytest.fixture(scope="module")

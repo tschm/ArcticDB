@@ -137,7 +137,7 @@ def test_upgrade_script_dryrun_azure(
     azurite_azure_test_connection_setting, azurite_azure_uri, azure_client_and_create_container
 ):
     # Given
-    (endpoint, container, credential_name, credential_key, ca_cert_path) = azurite_azure_test_connection_setting
+    (_, container, credential_name, credential_key, ca_cert_path, ca_cert_dir) = azurite_azure_test_connection_setting
     assert container
     ac = Arctic(azurite_azure_uri)
     create_library_config(ac, LIB_NAME)
@@ -149,6 +149,7 @@ def test_upgrade_script_dryrun_azure(
     config = ac._library_manager.get_library_config(LIB_NAME)
     azure_storage = _get_azure_storage_config(config)
     assert azure_storage.ca_cert_path == ca_cert_path
+    assert azure_storage.ca_cert_dir == ca_cert_dir
     assert azure_storage.container_name == container
     assert credential_key in azure_storage.endpoint
     assert credential_name in azure_storage.endpoint
@@ -161,7 +162,7 @@ def test_upgrade_script_azure(
     azurite_azure_test_connection_setting, azurite_azure_uri, azure_client_and_create_container
 ):
     # Given
-    (endpoint, container, credential_name, credential_key, ca_cert_path) = azurite_azure_test_connection_setting
+    (endpoint, container, credential_name, credential_key, ca_cert_path, ca_cert_dir) = azurite_azure_test_connection_setting
     assert container
     ac = Arctic(azurite_azure_uri)
 
@@ -172,6 +173,7 @@ def test_upgrade_script_azure(
     config = ac._library_manager.get_library_config(LIB_NAME)
     azure_storage = _get_azure_storage_config(config)
     assert azure_storage.ca_cert_path == ""
+    assert azure_storage.ca_cert_dir == ""
     assert azure_storage.container_name == ""
     assert azure_storage.endpoint == ""
     assert azure_storage.prefix.startswith(LIB_NAME)

@@ -59,7 +59,7 @@ class AzureLibraryAdapter(ArcticLibraryAdapter):
         if platform.system() == "Windows" and self._query_params.CA_cert_path:
             raise ValueError(f"CA_cert_path cannot be set on Windows platform")
         self._ca_cert_path = self._query_params.CA_cert_path
-        self._ca_cert_dir = self._query_params.CA_cert_path
+        self._ca_cert_dir = self._query_params.CA_cert_dir
         self._encoding_version = encoding_version
 
         super().__init__(uri, self._encoding_version)
@@ -82,6 +82,7 @@ class AzureLibraryAdapter(ArcticLibraryAdapter):
             endpoint=self._endpoint,
             with_prefix=with_prefix,
             ca_cert_path=self._ca_cert_path,
+            ca_cert_dir=self._ca_cert_dir
         )
 
         lib = NativeVersionStore.create_store_from_config(
@@ -114,7 +115,7 @@ class AzureLibraryAdapter(ArcticLibraryAdapter):
         if self._ca_cert_path:
             azure_override.ca_cert_path = self._ca_cert_path
         if self._ca_cert_dir:
-            azure_override.ca_cert_path = self._ca_cert_dir
+            azure_override.ca_cert_dir = self._ca_cert_dir
 
         storage_override = StorageOverride()
         storage_override.set_azure_override(azure_override)
