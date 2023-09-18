@@ -201,7 +201,7 @@ def azurite_azure_test_connection_setting(azurite_port, azurite_container, spawn
     credential_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     endpoint = f"https://127.0.0.1:{azurite_port}"
     # Default cert path is used; May run into problem on Linux's non RHEL distribution; See more on https://github.com/man-group/ArcticDB/issues/514
-    _, _, ca_cert_path = temp_cert
+    (_, _, ca_cert_path) = temp_cert
     ca_cert_dir = os.path.dirname(ca_cert_path)
 
     return endpoint, azurite_container, credential_name, credential_key, ca_cert_path, ca_cert_dir

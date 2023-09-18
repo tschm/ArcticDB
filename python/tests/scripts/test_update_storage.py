@@ -139,12 +139,12 @@ def test_upgrade_script_dryrun_azure(
     # Given
     (_, container, credential_name, credential_key, ca_cert_path, ca_cert_dir) = azurite_azure_test_connection_setting
     assert container
-    ac = Arctic(azurite_azure_uri)
+    uri = f"{azurite_azure_uri};CA_cert_dir={ca_cert_dir}"
+    ac = Arctic(uri)
     create_library_config(ac, LIB_NAME)
 
     # When
-    run(uri=azurite_azure_uri, run=False)
-
+    run(uri=uri, run=False)
     # Then
     config = ac._library_manager.get_library_config(LIB_NAME)
     azure_storage = _get_azure_storage_config(config)
