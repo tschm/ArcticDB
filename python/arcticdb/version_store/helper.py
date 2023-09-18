@@ -322,7 +322,9 @@ def create_test_s3_cfg(
     return cfg
 
 
-def create_test_azure_cfg(lib_name, credential_name, credential_key, container_name, endpoint, ca_cert_path, ca_cert_dir):
+def create_test_azure_cfg(
+    lib_name, credential_name, credential_key, container_name, endpoint, ca_cert_path, ca_cert_dir
+):
     cfg = EnvironmentConfigsMap()
     add_azure_library_to_env(
         cfg=cfg,
@@ -331,7 +333,7 @@ def create_test_azure_cfg(lib_name, credential_name, credential_key, container_n
         container_name=container_name,
         endpoint=endpoint,
         ca_cert_path=ca_cert_path,
-        ca_cert_dir=ca_cert_dir
+        ca_cert_dir=ca_cert_dir,
     )
     return cfg
 
@@ -399,7 +401,7 @@ def add_azure_library_to_env(
         endpoint=endpoint,
         with_prefix=with_prefix,
         ca_cert_path=ca_cert_path,
-        ca_cert_dir=ca_cert_dir
+        ca_cert_dir=ca_cert_dir,
     )
 
     _add_lib_desc_to_env(env, lib_name, sid, description)

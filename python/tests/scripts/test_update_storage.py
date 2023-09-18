@@ -162,7 +162,14 @@ def test_upgrade_script_azure(
     azurite_azure_test_connection_setting, azurite_azure_uri, azure_client_and_create_container
 ):
     # Given
-    (endpoint, container, credential_name, credential_key, ca_cert_path, ca_cert_dir) = azurite_azure_test_connection_setting
+    (
+        endpoint,
+        container,
+        credential_name,
+        credential_key,
+        ca_cert_path,
+        ca_cert_dir,
+    ) = azurite_azure_test_connection_setting
     assert container
     ac = Arctic(azurite_azure_uri)
 
