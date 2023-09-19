@@ -8,6 +8,7 @@ As of the Change Date specified in that file, in accordance with the Business So
 import re
 import time
 from typing import Optional
+import ssl
 import platform
 
 from arcticdb.options import LibraryOptions
@@ -27,8 +28,14 @@ PARSED_QUERY = namedtuple("PARSED_QUERY", ["region"])
 @dataclass
 class ParsedQuery:
     Path_prefix: Optional[str] = None
-    CA_cert_path: str = ""  # CURLOPT_CAINFO in curl
-    CA_cert_dir: str = ""  # CURLOPT_CAPATH in curl
+    # winhttp is used as Azure backend support on Winodws by default; winhttp itself mainatains ca cert.
+    # The options should be left empty else libcurl will be used on Windows
+    CA_cert_path: str = (
+        ssl.get_default_verify_paths().cafile if platform.system() is not "Windows" else ""
+    )  # CURLOPT_CAINFO in curl
+    CA_cert_dir: str = (
+        ssl.get_default_verify_paths().capath if platform.system() is not "Windows" else ""
+    )  # CURLOPT_CAPATH in curl
     Container: Optional[str] = None
 
 
