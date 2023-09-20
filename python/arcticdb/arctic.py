@@ -100,7 +100,7 @@ class Arctic:
                 For Windows user, `CA_cert_path` cannot be set. Please set CA certificate related option on Windows setting.
                 For details, you may refer to https://learn.microsoft.com/en-us/skype-sdk/sdn/articles/installing-the-trusted-root-certificate
 
-                Exception: Azure exceptions message always ends with `{AZURE_SDK_HTTP_STATUS_CODE}: {AZURE_SDK_REASON_PHRASE}: {AZURE_SDK_EXCEPTION_STRING}`.
+                Azure exception messages always end with `{AZURE_SDK_HTTP_STATUS_CODE}: {AZURE_SDK_REASON_PHRASE}: {AZURE_SDK_EXCEPTION_STRING}`.
 
                 Please refer to https://github.com/Azure/azure-sdk-for-cpp/blob/24ed290815d8f9dbcd758a60fdc5b6b9205f74e0/sdk/core/azure-core/inc/azure/core/http/http_status_code.hpp for
                 more details of provided status codes and reason phrases.
