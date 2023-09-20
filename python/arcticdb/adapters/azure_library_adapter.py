@@ -31,7 +31,7 @@ class ParsedQuery:
     # winhttp is used as Azure backend support on Winodws by default; winhttp itself mainatains ca cert.
     # The options should be left empty else libcurl will be used on Windows
     CA_cert_path: str = (
-        ssl.get_default_verify_paths().cafile if platform.system() is not "Windows" else ""
+        "" if platform.system() is "Windows" else ssl.get_default_verify_paths().cafile
     )  # CURLOPT_CAINFO in curl
     CA_cert_dir: str = (
         ssl.get_default_verify_paths().capath if platform.system() is not "Windows" else ""
