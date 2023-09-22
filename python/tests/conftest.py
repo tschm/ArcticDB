@@ -89,11 +89,10 @@ def _moto_s3_uri_module():
 
 
 @pytest.fixture(scope="function")
-def azure_client_and_create_container(azurite_container, azurite_azure_uri, temp_cert):
-    _, _, ca_cert_path = temp_cert
+def azure_client_and_create_container(azurite_container, azurite_azure_uri):
     client = BlobServiceClient.from_connection_string(
-        conn_str=azurite_azure_uri, container_name=azurite_container, connection_verify=ca_cert_path
-    )  # add connection_verify=False to bypass ssl checking
+        conn_str=azurite_azure_uri, container_name=azurite_container, connection_verify=False
+    )  # ssl cert verification is off as it is for testing only and function requires CA bundle
 
     container_client = client.get_container_client(container=azurite_container)
     if not container_client.exists():
@@ -210,7 +209,7 @@ def azurite_azure_test_connection_setting(azurite_port, azurite_container, spawn
 @pytest.fixture
 def azurite_azure_uri(azurite_azure_test_connection_setting):
     (endpoint, container, credential_name, credential_key, ca_cert_path, _) = azurite_azure_test_connection_setting
-    return f"azure://DefaultEndpointsProtocol=http;AccountName={credential_name};AccountKey={credential_key};BlobEndpoint={endpoint}/{credential_name};Container={container};CA_cert_path={ca_cert_path}"  # semi-colon at the end is not accepted by the sdk
+    return f"azure://DefaultEndpointsProtocol=https;AccountName={credential_name};AccountKey={credential_key};BlobEndpoint={endpoint}/{credential_name};Container={container};CA_cert_path={ca_cert_path}"  # semi-colon at the end is not accepted by the sdk
 
 
 @pytest.fixture

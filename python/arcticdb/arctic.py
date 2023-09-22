@@ -95,6 +95,7 @@ class Arctic:
                 +---------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------+
                 | CA_cert_dir               | (Non-Windows platform only) Azure CA certificate directory.                                                                                                   |
                 |                           | It sets option ``CURLOPT_CAPATH`` in Azure SDK's libcurl backend. If not set, python ``ssl.get_default_verify_paths().capath`` will be used                   |
+                |                           | Certificates can only be used if corresponding hash files exist (https://www.openssl.org/docs/man1.0.2/man3/SSL_CTX_load_verify_locations.html)               |
                 +---------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
                 For Windows user, `CA_cert_path` cannot be set. Please set CA certificate related option on Windows setting.
