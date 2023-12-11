@@ -250,6 +250,33 @@ def test_hypothesis_first_agg_numeric(lmdb_version_store, df):
     assert_frame_equal(expected, vit.data)
 
 
+@use_of_function_scoped_fixtures_in_hypothesis_checked
+@settings(deadline=None)
+@given(
+    df=data_frames(
+        [
+            column("grouping_column", elements=string_strategy, fill=string_strategy),
+            column("a", elements=string_strategy),
+        ],
+        index=range_indexes(),
+    )
+)
+def test_hypothesis_first_agg_strings(lmdb_version_store, df):
+    lib = lmdb_version_store
+    assume(not df.empty)
+
+    q = QueryBuilder()
+    q = q.groupby("grouping_column").agg({"a": "first"})
+    expected = df.groupby("grouping_column").agg({"a": "first"})
+
+    symbol = "first_agg"
+    lib.write(symbol, df)
+    vit = lib.read(symbol, query_builder=q)
+    vit.data.sort_index(inplace=True)
+
+    assert_frame_equal(expected, vit.data)
+
+
 def test_first_aggregation(local_object_version_store):
     df = DataFrame(
         {
@@ -267,6 +294,29 @@ def test_first_aggregation(local_object_version_store):
     res.data.sort_index(inplace=True)
 
     df = pd.DataFrame({"get_first": [100.0, 2.7, 5.8, np.nan]}, index=["group_1", "group_2", "group_3", "group_4"])
+    df.index.rename("grouping_column", inplace=True)
+    res.data.sort_index(inplace=True)
+
+    assert_frame_equal(res.data, df)
+
+
+def test_first_aggregation_strings(local_object_version_store):
+    df = DataFrame(
+        {
+            "grouping_column": ["group_1", "group_2", "group_1", "group_3"],
+            "get_first": ["Hello", "this", "is", "Homer", ],
+        },
+        index=np.arange(4),
+    )
+    q = QueryBuilder()
+    q = q.groupby("grouping_column").agg({"get_first": "first"})
+    symbol = "test_first_aggregation"
+    local_object_version_store.write(symbol, df)
+
+    res = local_object_version_store.read(symbol, query_builder=q)
+    res.data.sort_index(inplace=True)
+
+    df = pd.DataFrame({"get_first": ["Hello", "this", "Homer"]}, index=["group_1", "group_2", "group_3"])
     df.index.rename("grouping_column", inplace=True)
     res.data.sort_index(inplace=True)
 
@@ -291,6 +341,7 @@ def test_first_agg_with_append(local_object_version_store):
     assert_frame_equal(vit.data, df)
 
 
+# TODO add test for strings for last agg as well
 @use_of_function_scoped_fixtures_in_hypothesis_checked
 @settings(deadline=None)
 @given(
