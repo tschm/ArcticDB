@@ -224,7 +224,7 @@ public:
             // Check cpp/arcticdb/column_store/column_utils.hpp::array_at and cpp/arcticdb/column_store/column.hpp::Column
             data_(expected_rows * (type.dimension() == Dimension::Dim0 ? get_type_size(type.data_type()) : sizeof(void*)), presize),
             type_(type),
-            allow_sparse_(allow_sparse){
+            allow_sparse_(allow_sparse) {
         ARCTICDB_TRACE(log::inmem(), "Creating column with descriptor {}", type);
     }
 
@@ -763,6 +763,7 @@ private:
 
     bool inflated_ = false;
     bool allow_sparse_ = false;
+
     std::optional<util::BitMagic> sparse_map_;
     util::MagicNum<'D', 'C', 'o', 'l'> magic_;
 }; //class Column

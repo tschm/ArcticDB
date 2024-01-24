@@ -36,8 +36,8 @@ class AtomKeyImpl {
         content_hash_(content_hash),
         key_type_(key_type),
         index_start_(std::move(start_index)),
-        index_end_(std::move(end_index)),
-        str_() { }
+        index_end_(std::move(end_index)){
+        }
 
     AtomKeyImpl() = default;
     AtomKeyImpl(const AtomKeyImpl &other) = default;
@@ -114,7 +114,12 @@ class AtomKeyImpl {
         str_ = fmt::format("{}", *this);
     }
 
-    std::string_view view() const { if(str_.empty()) set_string(); return {str_}; }
+    std::string_view view() const {
+        if(str_.empty())
+            set_string();
+
+        return {str_};
+    }
 
 private:
     StreamId id_;
@@ -158,10 +163,16 @@ class AtomKeyBuilder {
         return *this;
     }
 
-    auto &string_index(const std::string &s) {
-        index_start_ = s;
+    auto& start_index(const timestamp& iv) {
+        index_start_ = NumericIndex{iv};
         return *this;
     }
+
+    auto& end_index(const timestamp& iv) {
+        index_end_ = NumericIndex{iv};
+        return *this;
+    }
+
     auto &start_index(const IndexValue &iv) {
         index_start_ = iv;
         return *this;
@@ -178,13 +189,13 @@ class AtomKeyBuilder {
     }
 
     template<KeyType KT>
-    AtomKeyImpl build(StreamId id) {
+    AtomKeyImpl build(StreamId id) const {
         return {
             std::move(id), version_id_, creation_ts_, content_hash_, index_start_, index_end_, KT
         };
     }
 
-    AtomKeyImpl build(StreamId id, KeyType key_type) {
+    AtomKeyImpl build(StreamId id, KeyType key_type) const {
         return {
             std::move(id), version_id_, creation_ts_, content_hash_, index_start_, index_end_, key_type
         };
@@ -221,8 +232,6 @@ inline AtomKey null_key() {
 // format. Transformation of keys for persistence is handled elsewhere.
 namespace fmt {
 
-using namespace arcticdb::entity;
-
 template<class FormatTag>
 struct formatter<FormattableRef < AtomKey, FormatTag>> {
 template<typename ParseContext>
@@ -231,11 +240,16 @@ constexpr auto parse(ParseContext &ctx) { return ctx.begin(); }
 template<typename FormatContext>
 auto format(const FormattableRef <arcticdb::entity::AtomKey, FormatTag> &f, FormatContext &ctx) const {
     const auto &key = f.ref;
-    return format_to(ctx.out(), FMT_STRING(FormatTag::format),
-                    key.type(), key.id(), key.version_id(),
-                     key.content_hash(), key.creation_ts(), tokenized_index(key.start_index()), tokenized_index(key.end_index()));
+    return format_to(ctx.out(),
+        FMT_STRING(FormatTag::format),
+        key.type(),
+        key.id(),
+        key.version_id(),
+        key.content_hash(),
+        key.creation_ts(),
+        tokenized_index(key.start_index()),
+        tokenized_index(key.end_index()));
 }
-
 };
 
 template<>

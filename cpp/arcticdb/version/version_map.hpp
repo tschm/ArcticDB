@@ -379,8 +379,8 @@ public:
                     KeyType::VERSION,
                     key.version_id(),
                     key.id(),
-                    IndexValue(0),
-                    IndexValue(0)
+                    IndexValue(NumericIndex{0}),
+                    IndexValue(NumericIndex{0})
             };
 
             journal_key = store->write_sync(pk, std::forward<decltype(segment)>(segment));
@@ -683,8 +683,8 @@ private:
                     KeyType::VERSION,
                     version_id,
                     stream_id,
-                    IndexValue(0),
-                    IndexValue(0)};
+                    IndexValue(NumericIndex{0}),
+                    IndexValue(NumericIndex{0}) };
 
             journal_key = to_atom(store->write_sync(pk, std::forward<decltype(segment)>(segment)));
         });
