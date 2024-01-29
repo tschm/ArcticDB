@@ -335,15 +335,13 @@ VariantData binary_operator(const Column& col, const Value& val, Func&& func) {
             using ReversedTargetType = typename type_arithmetic_promoted_type<typename val_type_info::RawType, typename col_type_info::RawType, std::remove_reference_t<decltype(func)>>::type;
             if constexpr(arguments_reversed) {
                 constexpr auto output_data_type = data_type_from_raw_type<ReversedTargetType>();
-                output_column = std::make_unique<Column>(make_scalar_type(output_data_type), col.row_count(), true, false);
-                output_column->set_row_data(col.last_row());
+                output_column = std::make_unique<Column>(make_scalar_type(output_data_type), col.row_count(), true, true);
                 Column::transform<typename col_type_info ::TDT, ScalarTagType<DataTypeTag<output_data_type>>>(col, *output_column, [&func, raw_value](auto input_value) -> ReversedTargetType {
                     return func.apply(raw_value, input_value);
                 });
             } else {
                 constexpr auto output_data_type = data_type_from_raw_type<TargetType>();
-                output_column = std::make_unique<Column>(make_scalar_type(output_data_type), col.row_count(), true, false);
-                output_column->set_row_data(col.last_row());
+                output_column = std::make_unique<Column>(make_scalar_type(output_data_type), col.row_count(), true, true);
                 Column::transform<typename col_type_info ::TDT, ScalarTagType<DataTypeTag<output_data_type>>>(col, *output_column, [&func, raw_value](auto input_value) -> TargetType {
                     return func.apply(input_value, raw_value);
                 });

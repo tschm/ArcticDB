@@ -244,6 +244,10 @@ public:
         sparse_map().set_range(0, bv_size(to_row), true);
     }
 
+    std::optional<util::BitMagic> opt_sparse_map() const {
+        return sparse_map_;
+    }
+
     std::optional<util::BitMagic>& opt_sparse_map() {
         return sparse_map_;
     }
@@ -674,6 +678,10 @@ public:
         auto input_data = input_column.data();
         auto output_data = output_column.data();
         std::transform(input_data.cbegin<input_tdt>(), input_data.cend<input_tdt>(), output_data.begin<output_tdt>(), std::move(f));
+        if (input_column.is_sparse()) {
+            output_column.set_sparse_map(*input_column.opt_sparse_map());
+        }
+        output_column.set_row_data(input_column.last_row());
     }
 
     template<typename left_input_tdt, typename right_input_tdt, typename output_tdt>
