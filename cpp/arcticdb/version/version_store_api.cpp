@@ -481,7 +481,11 @@ void PythonVersionStore::snapshot(
         auto sym_index_map = batch_get_latest_version(store(), version_map(), filtered_symbols, false);
         index_keys = utils::values(*sym_index_map);
     } else {
-        auto sym_index_map = batch_get_specific_version(store(), version_map(), versions);
+        auto sym_index_map = batch_get_specific_version(store(), version_map(), versions, false, true);
+        if (sym_index_map->empty()) {
+            log::version().warn("No valid symbols in the library, skipping creation for snapshot: {}", snap_name);
+            return;
+        }
         index_keys = utils::values(*sym_index_map);
         auto missing = filter_keys_on_existence(
                 utils::copy_of_values_as<VariantKey>(*sym_index_map), store(), false);

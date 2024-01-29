@@ -374,17 +374,25 @@ inline std::optional<VersionId> get_next_version_in_entry(const std::shared_ptr<
     return std::nullopt;
 }
 
-inline std::optional<AtomKey> find_index_key_for_version_id(
+inline std::optional<std::pair<AtomKey, bool>> find_index_key_for_version_id_and_tombstone_status(
     VersionId version_id,
-    const std::shared_ptr<VersionMapEntry>& entry,
-    bool included_deleted = true) {
+    const std::shared_ptr<VersionMapEntry>& entry) {
     auto key = std::find_if(std::begin(entry->keys_), std::end(entry->keys_), [version_id] (const auto& key) {
         return is_index_key_type(key.type()) && key.version_id() == version_id;
     });
     if(key == std::end(entry->keys_))
         return std::nullopt;
+    return std::make_optional(std::make_pair(*key, entry->is_tombstoned(*key)));
+}
 
-    return included_deleted || !entry->is_tombstoned(*key) ? std::make_optional(*key) : std::nullopt;
+inline std::optional<AtomKey> find_index_key_for_version_id(
+    VersionId version_id,
+    const std::shared_ptr<VersionMapEntry>& entry,
+    bool included_deleted = true) {
+    auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(version_id, entry);
+    if (!key_and_is_tombstoned)
+        return std::nullopt;
+    return included_deleted || !key_and_is_tombstoned->second ? std::make_optional(key_and_is_tombstoned->first) : std::nullopt;
 }
 
 inline std::optional<std::pair<AtomKey, AtomKey>> get_latest_key_pair(const std::shared_ptr<VersionMapEntry>& entry) {

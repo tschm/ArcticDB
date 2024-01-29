@@ -9,6 +9,7 @@ import pytest
 import numpy as np
 
 from arcticdb_ext.exceptions import InternalException
+from arcticdb_ext.version_store import NoSuchVersionException
 from arcticdb_ext.storage import NoDataFoundException
 from arcticdb.util.test import distinct_timestamps
 
@@ -439,3 +440,26 @@ def test_remove_from_snapshot_multiple(basic_store_tombstone_and_pruning):
     assert len(versions) == 1
     assert lib.read("s3", as_of="saved").data == 3
     assert lib.read("s2", as_of="saved").data == 2
+
+
+def test_snapshot_tombstoned_key(basic_store_tombstone_and_pruning):
+    lib = basic_store_tombstone_and_pruning
+    sym = "sym"
+
+    ver1 = lib.write(sym, 1).version
+    ver2 = lib.write(sym, 2).version
+    with pytest.raises(NoSuchVersionException): # Non-snapshotted, tombstoned version shouldn't readable; Just to make sure right fixutre is picked during refactoring
+        lib.read(sym, as_of=ver1)
+        
+    lib.snapshot("s", versions={sym : ver1})
+    assert len(lib.list_snapshots()) == 0 # Snapshot fail shouldn't throw exception but warning
+
+    lib.snapshot("s", versions={sym : ver2})
+    assert len(lib.list_snapshots()) == 1
+
+    # Need to allow tombstoned version which is referenced in other snapshot(s) can be "re-snapshot"
+    lib.write(sym, 3).version
+    lib.snapshot("s2", versions={sym : ver2})
+    lib.delete_snapshot("s")
+    assert len(lib.list_snapshots()) == 1
+    assert lib.read(sym, as_of="s2").data == 2

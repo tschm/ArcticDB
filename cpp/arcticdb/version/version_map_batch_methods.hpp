@@ -178,7 +178,8 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
     const std::shared_ptr<Store>& store,
     const std::shared_ptr<VersionMap>& version_map,
     const std::map<StreamId, VersionId>& sym_versions,
-    bool include_deleted = true) {
+    bool include_deleted = true,
+    bool include_referenced_in_snapshot_only = false) {
     ARCTICDB_SAMPLE(BatchGetLatestVersion, 0)
     auto output = std::make_shared<std::unordered_map<StreamId, AtomKey>>();
     auto mutex = std::make_shared<std::mutex>();
@@ -188,11 +189,21 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
             LoadParameter load_param{LoadType::LOAD_DOWNTO, static_cast<SignedVersionId>(sym_version.second)};
             return async::submit_io_task(CheckReloadTask{store, version_map, sym_version.first, load_param});
         },
-        [output, include_deleted, mutex](auto sym_version, const std::shared_ptr<VersionMapEntry>& entry) {
-        auto index_key = find_index_key_for_version_id(sym_version.second, entry, include_deleted);
-        if (index_key) {
-            std::lock_guard lock{*mutex};
-            (*output)[sym_version.first] = *index_key;
+        [output, include_deleted, include_referenced_in_snapshot_only, mutex, store](auto sym_version, const std::shared_ptr<VersionMapEntry>& entry) {
+        auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(sym_version.second, entry);
+        if (key_and_is_tombstoned) {
+            bool is_valid_key = include_deleted || !key_and_is_tombstoned->second;
+            if (!is_valid_key && include_referenced_in_snapshot_only && key_and_is_tombstoned->second) { //Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
+                log::version().warn("Version {} for symbol {} is tombstoned, checking snapshots (this can be slow)", sym_version.second, sym_version.first);
+                auto index_keys = get_index_keys_in_snapshots(store, sym_version.first);
+                is_valid_key = std::any_of(index_keys.begin(), index_keys.end(), [sym_version](const AtomKey& k) {
+                    return k.version_id() == sym_version.second;
+                });
+            }
+            if (is_valid_key) {
+                std::lock_guard lock{*mutex};
+                (*output)[sym_version.first] = key_and_is_tombstoned->first;
+            }
         }
     });
 
