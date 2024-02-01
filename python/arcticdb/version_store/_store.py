@@ -2065,6 +2065,7 @@ class NativeVersionStore:
         By default, the latest version of each active symbol at the time of snapshot creation will be contained within
         the snapshot. The symbols and versions contained within the snapshot will persist regardless of new symbols
         and versions written to the library post snapshot creation.
+        Except being referenced in existing snapshot, tombstoned version cannot be snapshotted.
 
         Parameters
         ----------

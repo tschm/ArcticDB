@@ -1259,6 +1259,7 @@ class Library:
 
         By default, the latest version of every symbol that has not been deleted will be contained within the snapshot.
         You can change this behaviour with either ``versions`` (an allow-list) or with ``skip_symbols`` (a deny-list).
+        Except being referenced in existing snapshot, tombstoned version cannot be snapshotted.
         Concurrent writes with prune previous versions set while the snapshot is being taken can potentially lead to
         corruption of the affected symbols in the snapshot.
 
