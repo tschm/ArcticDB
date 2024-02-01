@@ -173,6 +173,39 @@ struct MapRandomAccessWrapper {
     }
 };
 
+template <typename Inputs, typename TaskSubmitter>
+inline void submit_cpu_task_for_range(const Inputs& inputs, TaskSubmitter submitter) {
+    const auto window_size = async::TaskScheduler::instance()->cpu_thread_count();
+
+    auto futures = folly::window(inputs, [&submitter](const auto &input) {
+        return submitter(input);
+    }, window_size);
+
+    auto collected_futs = folly::collectAll(futures).get();
+    std::optional<std::string> all_exceptions;
+    for (auto&& collected_fut: collected_futs) {
+        if (!collected_fut.hasValue()) {
+            all_exceptions = all_exceptions.value_or("").append(collected_fut.exception().what().toStdString()).append("\n");
+        }
+    }
+    internal::check<ErrorCode::E_RUNTIME_ERROR>(!all_exceptions.has_value(), all_exceptions.value_or(""));
+}
+
+template <typename Task>
+struct IterationTask : async::BaseTask {
+    Task func_;
+    explicit IterationTask(
+            Task&& func) :
+            func_(std::move(func)) {
+    }
+
+    ARCTICDB_MOVE_ONLY_DEFAULT(IterationTask)
+
+    void operator()() {
+        func_();
+    }
+};
+
 // This version assumes that there is only one version per symbol, so no need for the state machine below
 inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific_version(
     const std::shared_ptr<Store>& store,
@@ -195,7 +228,7 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
         auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(sym_version.second, entry);
         if (key_and_is_tombstoned) {
             bool is_valid_key = include_deleted || !key_and_is_tombstoned->second;
-            if (!is_valid_key && include_referenced_in_snapshot_only && key_and_is_tombstoned->second) { //Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
+            if (!is_valid_key && include_referenced_in_snapshot_only && key_and_is_tombstoned->second) { // Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
                 log::version().warn("Version {} for symbol {} is tombstoned, need to check snapshots (this can be slow)", sym_version.second, sym_version.first);
                 std::lock_guard lock{*tombstoned_vers_mutex};
                 tombstoned_vers->emplace_back(sym_version.first, key_and_is_tombstoned->first);
@@ -209,13 +242,18 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
 
     if (!tombstoned_vers->empty()) {
         auto snap_map = get_master_snapshots_map(store);
-        for (const auto &tombstoned_ver : *tombstoned_vers) {
-            if (std::any_of(snap_map[tombstoned_ver.first].begin(), snap_map[tombstoned_ver.first].end(), [tombstoned_ver, &sym_versions](const auto &key_and_snapshot_ids) {
-                return key_and_snapshot_ids.first.version_id() == sym_versions.at(tombstoned_ver.first);
-            }))
-                (*output)[tombstoned_ver.first] = tombstoned_ver.second;
-
-        }
+        submit_cpu_task_for_range(*tombstoned_vers, [&snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex](const auto& tombstoned_ver) {
+            return async::submit_cpu_task(IterationTask{[&tombstoned_ver = std::as_const(tombstoned_ver), &snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex]() {
+                auto cit = snap_map.find(tombstoned_ver.first);
+                if (cit != snap_map.cend() && std::any_of(cit->second.cbegin(), cit->second.cend(), 
+                                                [&tombstoned_ver = std::as_const(tombstoned_ver), &sym_versions = std::as_const(sym_versions)](const auto &key_and_snapshot_ids) {
+                    return key_and_snapshot_ids.first.version_id() == sym_versions.at(tombstoned_ver.first);
+                })) {
+                    std::lock_guard lock{*output_mutex};
+                    (*output)[tombstoned_ver.first] = tombstoned_ver.second;
+                }
+            }});
+        });
     }
 
     return output;
