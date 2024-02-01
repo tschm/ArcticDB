@@ -182,30 +182,41 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
     bool include_referenced_in_snapshot_only = false) {
     ARCTICDB_SAMPLE(BatchGetLatestVersion, 0)
     auto output = std::make_shared<std::unordered_map<StreamId, AtomKey>>();
-    auto mutex = std::make_shared<std::mutex>();
+    auto output_mutex = std::make_shared<std::mutex>();
+    auto tombstoned_vers = std::make_shared<std::vector<std::pair<StreamId, AtomKey>>>(); // symbol, version key
+    auto tombstoned_vers_mutex = std::make_shared<std::mutex>();
 
     MapRandomAccessWrapper wrapper{sym_versions};
     submit_tasks_for_range(wrapper, [store, version_map](auto& sym_version) {
             LoadParameter load_param{LoadType::LOAD_DOWNTO, static_cast<SignedVersionId>(sym_version.second)};
             return async::submit_io_task(CheckReloadTask{store, version_map, sym_version.first, load_param});
         },
-        [output, include_deleted, include_referenced_in_snapshot_only, mutex, store](auto sym_version, const std::shared_ptr<VersionMapEntry>& entry) {
+        [output, include_deleted, include_referenced_in_snapshot_only, output_mutex, store, tombstoned_vers, tombstoned_vers_mutex](auto sym_version, const std::shared_ptr<VersionMapEntry>& entry) {
         auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(sym_version.second, entry);
         if (key_and_is_tombstoned) {
             bool is_valid_key = include_deleted || !key_and_is_tombstoned->second;
             if (!is_valid_key && include_referenced_in_snapshot_only && key_and_is_tombstoned->second) { //Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
-                log::version().warn("Version {} for symbol {} is tombstoned, checking snapshots (this can be slow)", sym_version.second, sym_version.first);
-                auto index_keys = get_index_keys_in_snapshots(store, sym_version.first);
-                is_valid_key = std::any_of(index_keys.begin(), index_keys.end(), [sym_version](const AtomKey& k) {
-                    return k.version_id() == sym_version.second;
-                });
+                log::version().warn("Version {} for symbol {} is tombstoned, need to check snapshots (this can be slow)", sym_version.second, sym_version.first);
+                std::lock_guard lock{*tombstoned_vers_mutex};
+                tombstoned_vers->emplace_back(sym_version.first, key_and_is_tombstoned->first);
             }
             if (is_valid_key) {
-                std::lock_guard lock{*mutex};
+                std::lock_guard lock{*output_mutex};
                 (*output)[sym_version.first] = key_and_is_tombstoned->first;
             }
         }
     });
+
+    if (!tombstoned_vers->empty()) {
+        auto snap_map = get_master_snapshots_map(store);
+        for (const auto &tombstoned_ver : *tombstoned_vers) {
+            if (std::any_of(snap_map[tombstoned_ver.first].begin(), snap_map[tombstoned_ver.first].end(), [tombstoned_ver, &sym_versions](const auto &key_and_snapshot_ids) {
+                return key_and_snapshot_ids.first.version_id() == sym_versions.at(tombstoned_ver.first);
+            }))
+                (*output)[tombstoned_ver.first] = tombstoned_ver.second;
+
+        }
+    }
 
     return output;
 }

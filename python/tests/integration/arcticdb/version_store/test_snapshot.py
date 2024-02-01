@@ -457,7 +457,7 @@ def test_snapshot_tombstoned_key(basic_store_tombstone_and_pruning):
     lib.snapshot("s", versions={sym : ver2})
     assert len(lib.list_snapshots()) == 1
 
-    # Need to allow tombstoned version which is referenced in other snapshot(s) can be "re-snapshot"
+    # Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
     lib.write(sym, 3).version
     lib.snapshot("s2", versions={sym : ver2})
     lib.delete_snapshot("s")
