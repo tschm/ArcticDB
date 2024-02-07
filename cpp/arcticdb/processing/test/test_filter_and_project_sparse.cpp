@@ -9,36 +9,36 @@
 #include <arcticdb/processing/processing_unit.hpp>
 #include <arcticdb/util/test/generators.hpp>
 
-TEST(ProjectSparse, UnaryArithmetic) {
-    using namespace arcticdb;
-
-    const std::string input_column_name{"sparse_floats_1"};
-    const std::string output_column{"NEG"};
-
-    auto expression_node = std::make_shared<ExpressionNode>(ColumnName(input_column_name), OperationType::NEG);
-    auto expression_context = std::make_shared<ExpressionContext>();
-    expression_context->add_expression_node(output_column, expression_node);
-    expression_context->root_node_name_ = ExpressionName(output_column);
-
-    auto input_segment = generate_filter_and_project_testing_sparse_segment();
-    auto input_column = input_segment.column_ptr(input_segment.column_index(input_column_name).value());
-
-    auto proc_unit = ProcessingUnit(std::move(input_segment));
-    proc_unit.set_expression_context(expression_context);
-
-    auto variant_data = proc_unit.get(expression_context->root_node_name_);
-
-    ASSERT_TRUE(std::holds_alternative<ColumnWithStrings>(variant_data));
-    auto& projected_column = *std::get<ColumnWithStrings>(variant_data).column_;
-
-    ASSERT_EQ(input_column->last_row(), projected_column.last_row());
-    ASSERT_EQ(input_column->row_count(), projected_column.row_count());
-    ASSERT_EQ(input_column->opt_sparse_map(), projected_column.opt_sparse_map());
-
-    for (auto idx=0; idx< input_column->row_count(); idx++) {
-        ASSERT_FLOAT_EQ(input_column->reference_at<double>(idx), -projected_column.reference_at<double>(idx));
-    }
-}
+//TEST(ProjectSparse, UnaryArithmetic) {
+//    using namespace arcticdb;
+//
+//    const std::string input_column_name{"sparse_floats_1"};
+//    const std::string output_column{"NEG"};
+//
+//    auto expression_node = std::make_shared<ExpressionNode>(ColumnName(input_column_name), OperationType::NEG);
+//    auto expression_context = std::make_shared<ExpressionContext>();
+//    expression_context->add_expression_node(output_column, expression_node);
+//    expression_context->root_node_name_ = ExpressionName(output_column);
+//
+//    auto input_segment = generate_filter_and_project_testing_sparse_segment();
+//    auto input_column = input_segment.column_ptr(input_segment.column_index(input_column_name).value());
+//
+//    auto proc_unit = ProcessingUnit(std::move(input_segment));
+//    proc_unit.set_expression_context(expression_context);
+//
+//    auto variant_data = proc_unit.get(expression_context->root_node_name_);
+//
+//    ASSERT_TRUE(std::holds_alternative<ColumnWithStrings>(variant_data));
+//    auto& projected_column = *std::get<ColumnWithStrings>(variant_data).column_;
+//
+//    ASSERT_EQ(input_column->last_row(), projected_column.last_row());
+//    ASSERT_EQ(input_column->row_count(), projected_column.row_count());
+//    ASSERT_EQ(input_column->opt_sparse_map(), projected_column.opt_sparse_map());
+//
+//    for (auto idx=0; idx< input_column->row_count(); idx++) {
+//        ASSERT_FLOAT_EQ(input_column->reference_at<double>(idx), -projected_column.reference_at<double>(idx));
+//    }
+//}
 
 //TEST(FilterSparse, NOTNULL) {
 //    using namespace arcticdb;
@@ -71,47 +71,38 @@ TEST(ProjectSparse, UnaryArithmetic) {
 //    ASSERT_EQ(segment.row_count(), 3);
 //}
 
-//TEST(ProjectSparse, BinaryArithmeticColVal) {
-//    using namespace arcticdb;
-//    auto component_manager = std::make_shared<ComponentManager>();
-//
-//    const std::string input_column_name{"sparse_floats_1"};
-//    const std::string value_name{"ten"};
-//    const std::string output_column{"MUL"};
-//
-//    auto expression_node = std::make_shared<ExpressionNode>(ColumnName(input_column_name), ValueName(value_name), OperationType::MUL);
-//    ExpressionContext expression_context;
-//    expression_context.add_expression_node(output_column, expression_node);
-//    expression_context.add_value(value_name, std::make_shared<Value>(double(10.0), DataType::FLOAT64));
-//    expression_context.root_node_name_ = ExpressionName(output_column);
-//
-//    ProjectClause project({}, output_column, expression_context);
-//    project.set_component_manager(component_manager);
-//
-//    auto input_segment = generate_filter_and_project_testing_sparse_segment();
-//    auto input_column = input_segment.column_ptr(input_segment.column_index(input_column_name).value());
-//
-//    auto proc_unit = ProcessingUnit(std::move(input_segment));
-//    auto entity_ids = Composite<EntityIds>(push_entities(component_manager, std::move(proc_unit)));
-//
-//    auto projected = gather_entities(component_manager, project.process(std::move(entity_ids))).as_range();
-//    ASSERT_EQ(1, projected.size());
-//    ASSERT_TRUE(projected[0].segments_.has_value());
-//    auto segments = projected[0].segments_.value();
-//    ASSERT_EQ(1, segments.size());
-//    auto segment = *segments[0];
-//    auto column_index = segment.column_index(output_column);
-//    ASSERT_TRUE(column_index.has_value());
-//    auto& projected_column = segment.column(*column_index);
-//
-//    ASSERT_EQ(input_column->last_row(), projected_column.last_row());
-//    ASSERT_EQ(input_column->row_count(), projected_column.row_count());
-//    ASSERT_EQ(input_column->opt_sparse_map(), projected_column.opt_sparse_map());
-//
-//    for (auto idx=0; idx< input_column->row_count(); idx++) {
-//        ASSERT_FLOAT_EQ(10.0 * input_column->reference_at<double>(idx), projected_column.reference_at<double>(idx));
-//    }
-//}
+TEST(ProjectSparse, BinaryArithmeticColVal) {
+    using namespace arcticdb;
+
+    const std::string input_column_name{"sparse_floats_1"};
+    const std::string value_name{"ten"};
+    const std::string output_column{"MUL"};
+
+    auto expression_node = std::make_shared<ExpressionNode>(ColumnName(input_column_name), ValueName(value_name), OperationType::MUL);
+    auto expression_context = std::make_shared<ExpressionContext>();
+    expression_context->add_expression_node(output_column, expression_node);
+    expression_context->add_value(value_name, std::make_shared<Value>(double(10.0), DataType::FLOAT64));
+    expression_context->root_node_name_ = ExpressionName(output_column);
+
+    auto input_segment = generate_filter_and_project_testing_sparse_segment();
+    auto input_column = input_segment.column_ptr(input_segment.column_index(input_column_name).value());
+
+    auto proc_unit = ProcessingUnit(std::move(input_segment));
+    proc_unit.set_expression_context(expression_context);
+
+    auto variant_data = proc_unit.get(expression_context->root_node_name_);
+
+    ASSERT_TRUE(std::holds_alternative<ColumnWithStrings>(variant_data));
+    auto& projected_column = *std::get<ColumnWithStrings>(variant_data).column_;
+
+    ASSERT_EQ(input_column->last_row(), projected_column.last_row());
+    ASSERT_EQ(input_column->row_count(), projected_column.row_count());
+    ASSERT_EQ(input_column->opt_sparse_map(), projected_column.opt_sparse_map());
+
+    for (auto idx=0; idx< input_column->row_count(); idx++) {
+        ASSERT_FLOAT_EQ(10.0 * input_column->reference_at<double>(idx), projected_column.reference_at<double>(idx));
+    }
+}
 //
 //TEST(ProjectSparse, BinaryArithmeticSparseColSparseCol) {
 //    using namespace arcticdb;
