@@ -132,14 +132,45 @@ struct ColumnData {
  * ColumnData is just a thin wrapper that helps in iteration over all the blocks in the column
  */
 
+    template<typename RawType, bool constant>
+    struct Enumeration {
+        std::conditional_t<constant, const ssize_t&, ssize_t&> idx;
+        std::conditional_t<constant, const RawType&, RawType&> value;
+
+        Enumeration(std::conditional_t<constant, const ssize_t&, ssize_t&> i, std::conditional_t<constant, const RawType&, RawType&> val):
+        idx(i),
+        value(val)
+        {
+        }
+    };
+
   public:
-    template<typename TDT, bool constant>
+    template<typename TDT, bool enumerate, bool constant>
     class ColumnDataIterator: public boost::iterator_facade<
-            ColumnDataIterator<TDT, constant>,
-            std::conditional_t<constant, typename TDT::DataTypeTag::raw_type const, typename TDT::DataTypeTag::raw_type>,
+            ColumnDataIterator<TDT, enumerate, constant>,
+            std::conditional_t<enumerate,
+                std::conditional_t<constant,
+                    const Enumeration<typename TDT::DataTypeTag::raw_type, constant>,
+                    Enumeration<typename TDT::DataTypeTag::raw_type, constant>
+                >,
+                std::conditional_t<constant,
+                    const typename TDT::DataTypeTag::raw_type,
+                    typename TDT::DataTypeTag::raw_type
+                >
+            >,
             boost::forward_traversal_tag
             > {
     using RawType = std::conditional_t<constant, const typename TDT::DataTypeTag::raw_type, typename TDT::DataTypeTag::raw_type>;
+    using DerefType =   std::conditional_t<enumerate,
+                            std::conditional_t<constant,
+                                const Enumeration<typename TDT::DataTypeTag::raw_type, constant>,
+                                Enumeration<typename TDT::DataTypeTag::raw_type, constant>
+                            >,
+                            std::conditional_t<constant,
+                                const typename TDT::DataTypeTag::raw_type,
+                                typename TDT::DataTypeTag::raw_type
+                            >
+                        >;
     public:
         ColumnDataIterator() = delete;
 
@@ -148,6 +179,9 @@ struct ColumnData {
         parent_(parent)
         {
             increment_block();
+            if constexpr (enumerate) {
+                enumeration_.emplace(idx_, *ptr_);
+            }
         }
 
         // Used to construct [c]end iterators
@@ -155,15 +189,15 @@ struct ColumnData {
                 parent_(parent),
                 ptr_(end_ptr) {}
 
-        template <class OtherValue, bool OtherConst>
-        ColumnDataIterator(ColumnDataIterator<OtherValue, OtherConst> const& other):
+        template <class OtherValue, bool OtherEnumerate, bool OtherConst>
+        ColumnDataIterator(ColumnDataIterator<OtherValue, OtherEnumerate, OtherConst> const& other):
         parent_(other.parent_),
         opt_block_(other.opt_block_),
         remaining_values_in_block_(other.remaining_values_in_block_),
         ptr_(other.ptr_) {}
     private:
         friend class boost::iterator_core_access;
-        template <class, bool> friend class ColumnDataIterator;
+        template <class, bool, bool> friend class ColumnDataIterator;
 
         void increment() {
             if (ARCTICDB_LIKELY(remaining_values_in_block_ > 0)) {
@@ -171,6 +205,9 @@ struct ColumnData {
                 --remaining_values_in_block_;
             } else {
                 increment_block();
+            }
+            if constexpr (enumerate) {
+                enumeration_.emplace(++idx_, *ptr_);
             }
         }
 
@@ -186,19 +223,26 @@ struct ColumnData {
             }
         }
 
-        template <typename OtherValue, bool OtherConst>
-        bool equal(ColumnDataIterator<OtherValue, OtherConst> const& other) const {
+        template <typename OtherValue, bool OtherEnumerate, bool OtherConst>
+        bool equal(ColumnDataIterator<OtherValue, OtherEnumerate, OtherConst> const& other) const {
             return parent_ == other.parent_ && ptr_ == other.ptr_;
         }
 
-        RawType& dereference() const {
-            return *ptr_;
+        DerefType& dereference() const {
+            if constexpr (enumerate) {
+                return *enumeration_;
+            } else {
+                return *ptr_;
+            }
         }
 
         ColumnData* parent_{nullptr};
         std::optional<TypedBlockData<TDT>> opt_block_{std::nullopt};
         std::size_t remaining_values_in_block_{0};
         RawType* ptr_{nullptr};
+        // Unused if enumerate is false
+        ssize_t idx_{0};
+        std::optional<Enumeration<typename TDT::DataTypeTag::raw_type, constant>> enumeration_{std::nullopt};
     };
 
     ColumnData(
@@ -215,18 +259,18 @@ struct ColumnData {
 
     ARCTICDB_MOVE_COPY_DEFAULT(ColumnData)
 
-    template<typename TDT>
-    ColumnDataIterator<TDT, false> begin() {
-        return ColumnDataIterator<TDT, false>(this);
+    template<typename TDT, bool enumerate>
+    ColumnDataIterator<TDT, enumerate, false> begin() {
+        return ColumnDataIterator<TDT, enumerate, false>(this);
     }
 
-    template<typename TDT>
-    ColumnDataIterator<TDT, true> cbegin() {
-        return ColumnDataIterator<TDT, true>(this);
+    template<typename TDT, bool enumerate>
+    ColumnDataIterator<TDT, enumerate, true> cbegin() {
+        return ColumnDataIterator<TDT, enumerate, true>(this);
     }
 
-    template<typename TDT>
-    ColumnDataIterator<TDT, false> end() {
+    template<typename TDT, bool enumerate>
+    ColumnDataIterator<TDT, enumerate, false> end() {
         using RawType = typename TDT::DataTypeTag::raw_type;
         RawType* end_ptr{nullptr};
         if(!data_->blocks().empty()) {
@@ -234,11 +278,11 @@ struct ColumnData {
             auto typed_block_data = next_typed_block<TDT>(block);
             end_ptr = typed_block_data.data() + typed_block_data.row_count();
         }
-        return ColumnDataIterator<TDT, false>(this, end_ptr);
+        return ColumnDataIterator<TDT, enumerate, false>(this, end_ptr);
     }
 
-    template<typename TDT>
-    ColumnDataIterator<TDT, true> cend() {
+    template<typename TDT, bool enumerate>
+    ColumnDataIterator<TDT, enumerate, true> cend() {
         using RawType = typename TDT::DataTypeTag::raw_type;
         const RawType* end_ptr{nullptr};
         if(!data_->blocks().empty()) {
@@ -246,7 +290,7 @@ struct ColumnData {
             auto typed_block_data = next_typed_block<TDT>(block);
             end_ptr = typed_block_data.data() + typed_block_data.row_count();
         }
-        return ColumnDataIterator<TDT, true>(this, end_ptr);
+        return ColumnDataIterator<TDT, enumerate, true>(this, end_ptr);
     }
 
     TypeDescriptor type() const {

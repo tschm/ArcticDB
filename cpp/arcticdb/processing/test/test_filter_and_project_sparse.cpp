@@ -103,7 +103,7 @@ TEST(ProjectSparse, BinaryArithmeticColVal) {
         ASSERT_FLOAT_EQ(10.0 * input_column->reference_at<double>(idx), projected_column.reference_at<double>(idx));
     }
 }
-//
+
 //TEST(ProjectSparse, BinaryArithmeticSparseColSparseCol) {
 //    using namespace arcticdb;
 //    auto component_manager = std::make_shared<ComponentManager>();

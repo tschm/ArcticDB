@@ -666,7 +666,7 @@ public:
     static void for_each(const Column& input_column,
                           folly::Function<void(typename input_tdt::DataTypeTag::raw_type)>&& f) {
         auto input_data = input_column.data();
-        std::for_each(input_data.cbegin<input_tdt>(), input_data.cend<input_tdt>(), [&f](auto input_value) {
+        std::for_each(input_data.cbegin<input_tdt, false>(), input_data.cend<input_tdt, false>(), [&f](auto input_value) {
             f(input_value);
         });
     }
@@ -677,7 +677,7 @@ public:
                           folly::Function<typename output_tdt::DataTypeTag::raw_type(typename input_tdt::DataTypeTag::raw_type)>&& f) {
         auto input_data = input_column.data();
         auto output_data = output_column.data();
-        std::transform(input_data.cbegin<input_tdt>(), input_data.cend<input_tdt>(), output_data.begin<output_tdt>(), std::move(f));
+        std::transform(input_data.cbegin<input_tdt, false>(), input_data.cend<input_tdt, false>(), output_data.begin<output_tdt, false>(), std::move(f));
         if (input_column.is_sparse()) {
             output_column.set_sparse_map(*input_column.opt_sparse_map());
         }
@@ -692,7 +692,7 @@ public:
         auto left_input_data = left_input_column.data();
         auto right_input_data = right_input_column.data();
         auto output_data = output_column.data();
-        std::transform(left_input_data.cbegin<left_input_tdt>(), left_input_data.cend<left_input_tdt>(), right_input_data.cbegin<right_input_tdt>(), output_data.begin<output_tdt>(), [&f](auto left_value, auto right_value) {
+        std::transform(left_input_data.cbegin<left_input_tdt, false>(), left_input_data.cend<left_input_tdt, false>(), right_input_data.cbegin<right_input_tdt, false>(), output_data.begin<output_tdt, false>(), [&f](auto left_value, auto right_value) {
             return f(left_value, right_value);
         });
     }
@@ -703,12 +703,10 @@ public:
                           folly::Function<bool(typename input_tdt::DataTypeTag::raw_type)>&& f) {
         auto input_data = input_column.data();
         util::BitSet::bulk_insert_iterator inserter(output_bitset);
-        auto pos = 0u;
-        std::for_each(input_data.cbegin<input_tdt>(), input_data.cend<input_tdt>(), [&inserter, &pos, &f](auto input_value) {
-            if (f(input_value)) {
-                inserter = pos;
+        std::for_each(input_data.cbegin<input_tdt, true>(), input_data.cend<input_tdt, true>(), [&inserter, &f](auto input) {
+            if (f(input.value)) {
+                inserter = input.idx;
             }
-            ++pos;
         });
         inserter.flush();
     }
@@ -719,15 +717,14 @@ public:
                           util::BitSet& output_bitset,
                           folly::Function<bool(typename left_input_tdt::DataTypeTag::raw_type, typename right_input_tdt::DataTypeTag::raw_type)>&& f) {
         auto left_input_data = left_input_column.data();
-        auto right_it = right_input_column.data().cbegin<right_input_tdt>();
+        auto right_it = right_input_column.data().cbegin<right_input_tdt, true>();
         util::BitSet::bulk_insert_iterator inserter(output_bitset);
-        auto pos = 0u;
-        std::for_each(left_input_data.cbegin<left_input_tdt>(), left_input_data.cend<left_input_tdt>(), [&right_it, &inserter, &pos, &f](auto left_value) {
-            auto right_value = *right_it++;
-            if (f(left_value, right_value)) {
-                inserter = pos;
+        std::for_each(left_input_data.cbegin<left_input_tdt, true>(), left_input_data.cend<left_input_tdt, true>(), [&right_it, &inserter, &f](auto left_value) {
+            internal::check<ErrorCode::E_ASSERTION_FAILURE>(left_value.idx == right_it->idx, "Mismatching row-indexes in Column::transform(col, col, bitset)");
+            if (f(left_value.value, right_it->value)) {
+                inserter = left_value.idx;
             }
-            ++pos;
+            ++right_it;
         });
         inserter.flush();
     }
