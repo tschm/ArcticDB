@@ -16,12 +16,12 @@ class BasicFunctions:
     number = 5
     timeout = 6000
 
+    # params = ([1_000, 15_00], [50, 100])
     params = ([100_000, 150_000], [500, 1000])
-    # params = ([1000, 1500], [500, 1000])
     param_names = ["rows", "num_symbols"]
 
     def setup_cache(self):
-        self.ac = Arctic("lmdb://basic_functions?map_size=10GB")
+        self.ac = Arctic("lmdb://basic_functions?map_size=20GB")
         num_rows, num_symbols = BasicFunctions.params
 
         self.dfs = {rows: generate_pseudo_random_dataframe(rows) for rows in num_rows}
@@ -32,7 +32,14 @@ class BasicFunctions:
             lib = self.ac[lib]
             for sym in range(num_symbols[-1]):
                 lib.write(f"{sym}_sym", self.dfs[rows])
+
+        lib = get_prewritten_lib_name(5_000)
+        self.ac.delete_library(lib)
+        self.ac.create_library(lib)
+        lib = self.ac[lib]
         lib.write("short_wide_sym", generate_random_floats_dataframe(5_000, 30_000))
+
+        del self.ac
 
     def teardown(self, rows, num_symbols):
         for lib in self.ac.list_libraries():
@@ -40,8 +47,10 @@ class BasicFunctions:
                 continue
             self.ac.delete_library(lib)
 
+        del self.ac
+
     def setup(self, rows, num_symbols):
-        self.ac = Arctic("lmdb://basic_functions?map_size=10GB")
+        self.ac = Arctic("lmdb://basic_functions?map_size=20GB")
         self.read_reqs = [ReadRequest(f"{sym}_sym") for sym in range(num_symbols)]
 
         self.df = generate_pseudo_random_dataframe(rows)
@@ -107,11 +116,11 @@ class BasicFunctions:
         [lib.read(f"{sym}_sym").data for sym in range(num_symbols)]
 
     def time_read_short_wide(self, rows, num_symbols):
-        lib = self.ac[get_prewritten_lib_name(rows)]
+        lib = self.ac[get_prewritten_lib_name(5000)]
         lib.read("short_wide_sym").data
 
     def peakmem_read_short_wide(self, rows, num_symbols):
-        lib = self.ac[get_prewritten_lib_name(rows)]
+        lib = self.ac[get_prewritten_lib_name(5000)]
         lib.read("short_wide_sym").data
 
     def time_read_batch(self, rows, num_symbols):
@@ -141,13 +150,17 @@ class BasicFunctions:
     def time_read_batch_with_columns(self, rows, num_symbols):
         lib = self.ac[get_prewritten_lib_name(rows)]
         COLS = ["value"]
-        read_reqs = [ReadRequest(f"{sym}_sym", columns=COLS) for sym in range(num_symbols)]
+        read_reqs = [
+            ReadRequest(f"{sym}_sym", columns=COLS) for sym in range(num_symbols)
+        ]
         lib.read_batch(read_reqs)
 
     def peakmem_read_batch_with_columns(self, rows, num_symbols):
         lib = self.ac[get_prewritten_lib_name(rows)]
         COLS = ["value"]
-        read_reqs = [ReadRequest(f"{sym}_sym", columns=COLS) for sym in range(num_symbols)]
+        read_reqs = [
+            ReadRequest(f"{sym}_sym", columns=COLS) for sym in range(num_symbols)
+        ]
         lib.read_batch(read_reqs)
 
     def time_read_with_date_ranges(self, rows, num_symbols):
@@ -163,11 +176,15 @@ class BasicFunctions:
     def time_read_batch_with_date_ranges(self, rows, num_symbols):
         lib = self.ac[get_prewritten_lib_name(rows)]
         dr = pd.date_range("2023-01-01", "2023-01-01")
-        read_reqs = [ReadRequest(f"{sym}_sym", date_range=dr) for sym in range(num_symbols)]
+        read_reqs = [
+            ReadRequest(f"{sym}_sym", date_range=dr) for sym in range(num_symbols)
+        ]
         lib.read_batch(read_reqs)
 
     def peakmem_read_batch_with_date_ranges(self, rows, num_symbols):
         lib = self.ac[get_prewritten_lib_name(rows)]
         dr = pd.date_range("2023-01-01", "2023-01-01")
-        read_reqs = [ReadRequest(f"{sym}_sym", date_range=dr) for sym in range(num_symbols)]
+        read_reqs = [
+            ReadRequest(f"{sym}_sym", date_range=dr) for sym in range(num_symbols)
+        ]
         lib.read_batch(read_reqs)
