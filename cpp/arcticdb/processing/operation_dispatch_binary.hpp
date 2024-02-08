@@ -287,8 +287,30 @@ VariantData binary_operator(const Column& left, const Column& right, Func&& func
     schema::check<ErrorCode::E_UNSUPPORTED_COLUMN_TYPE>(
             !is_empty_type(left.type().data_type()) && !is_empty_type(right.type().data_type()),
             "Empty column provided to binary operator");
-    util::check(left.row_count() == right.row_count(), "Columns with different row counts ({} and {}) in binary operator", left.row_count(), right.row_count());
     std::unique_ptr<Column> output_column;
+    position_t output_row_count;
+    if (left.is_sparse() && right.is_sparse()) {
+        output_row_count = (*left.opt_sparse_map() & *right.opt_sparse_map()).count();
+    } else if (left.is_sparse() && !right.is_sparse()) {
+        if (right.last_row() >= left.last_row()) {
+            output_row_count = left.opt_sparse_map()->count();
+        } else {
+            util::BitIndex sparse_index;
+            left.opt_sparse_map()->build_rs_index(&sparse_index);
+            output_row_count = left.opt_sparse_map()->count_to(right.row_count(), sparse_index);
+        }
+    } else if (!left.is_sparse() && right.is_sparse()) {
+        if (left.last_row() >= right.last_row()) {
+            output_row_count = right.opt_sparse_map()->count();
+        } else {
+            util::BitIndex sparse_index;
+            right.opt_sparse_map()->build_rs_index(&sparse_index);
+            output_row_count = right.opt_sparse_map()->count_to(left.row_count(), sparse_index);
+        }
+    } else {
+        // Both dense. Could be different lengths if the data is semantically sparse, but happens to be dense in the first n rows
+        output_row_count = std::min(left.row_count(), right.row_count());
+    }
 
     details::visit_type(left.type().data_type(), [&](auto left_desc_tag) {
         using left_type_info = ScalarTypeInfo<decltype(left_desc_tag)>;
@@ -302,7 +324,7 @@ VariantData binary_operator(const Column& left, const Column& right, Func&& func
             }
             using TargetType = typename type_arithmetic_promoted_type<typename left_type_info::RawType, typename right_type_info::RawType, std::remove_reference_t<decltype(func)>>::type;
             constexpr auto output_data_type = data_type_from_raw_type<TargetType>();
-            output_column = std::make_unique<Column>(make_scalar_type(output_data_type), left.row_count(), true, false);
+            output_column = std::make_unique<Column>(make_scalar_type(output_data_type), output_row_count, true, false);
             output_column->set_row_data(left.last_row());
             Column::transform<typename left_type_info::TDT, typename right_type_info::TDT, ScalarTagType<DataTypeTag<output_data_type>>>(
                     left, right, *output_column, [&func] (auto left_value, auto right_value) -> TargetType {
