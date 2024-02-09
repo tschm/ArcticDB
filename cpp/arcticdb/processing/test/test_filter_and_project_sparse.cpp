@@ -130,12 +130,24 @@ TEST(ProjectSparse, BinaryArithmeticSparseColSparseCol) {
 
     // sparse_floats_1 has fewer values than sparse_floats_2
     ASSERT_EQ(lhs_input_column->last_row(), projected_column.last_row());
-    ASSERT_EQ(lhs_input_column->row_count(), projected_column.row_count());
     ASSERT_TRUE(projected_column.opt_sparse_map().has_value());
     ASSERT_EQ(*lhs_input_column->opt_sparse_map() & *rhs_input_column->opt_sparse_map(), *projected_column.opt_sparse_map());
+    ASSERT_EQ(projected_column.row_count(), projected_column.opt_sparse_map()->count());
 
-    for (auto idx=0; idx< lhs_input_column->row_count(); idx++) {
-        ASSERT_FLOAT_EQ(lhs_input_column->reference_at<double>(idx) * rhs_input_column->reference_at<double>(idx), projected_column.reference_at<double>(idx));
+    for (auto idx = 0; idx <= projected_column.last_row(); idx++) {
+        auto opt_left_value = lhs_input_column->scalar_at<double>(idx);
+        auto opt_right_value = rhs_input_column->scalar_at<double>(idx);
+        auto opt_projected_value = projected_column.scalar_at<double>(idx);
+        if (opt_left_value.has_value() && opt_right_value.has_value()) {
+            ASSERT_TRUE(opt_projected_value.has_value());
+            if (std::isnan(*opt_left_value * *opt_right_value)) {
+                ASSERT_TRUE(std::isnan(*opt_projected_value));
+            } else {
+                ASSERT_FLOAT_EQ(*opt_left_value * *opt_right_value, *projected_column.scalar_at<double>(idx));
+            }
+        } else {
+            ASSERT_FALSE(projected_column.has_value_at(idx));
+        }
     }
 }
 
@@ -148,29 +160,21 @@ TEST(ProjectSparse, BinaryArithmeticSparseColSparseCol) {
 //    const std::string output_column{"MUL"};
 //
 //    auto expression_node = std::make_shared<ExpressionNode>(ColumnName(lhs_column_name), ColumnName(rhs_column_name), OperationType::MUL);
-//    ExpressionContext expression_context;
-//    expression_context.add_expression_node(output_column, expression_node);
-//    expression_context.root_node_name_ = ExpressionName(output_column);
-//
-//    ProjectClause project({}, output_column, expression_context);
-//    project.set_component_manager(component_manager);
+//    auto expression_context = std::make_shared<ExpressionContext>();
+//    expression_context->add_expression_node(output_column, expression_node);
+//    expression_context->root_node_name_ = ExpressionName(output_column);
 //
 //    auto input_segment = generate_filter_and_project_testing_sparse_segment();
 //    auto lhs_input_column = input_segment.column_ptr(input_segment.column_index(lhs_column_name).value());
 //    auto rhs_input_column = input_segment.column_ptr(input_segment.column_index(rhs_column_name).value());
 //
 //    auto proc_unit = ProcessingUnit(std::move(input_segment));
-//    auto entity_ids = Composite<EntityIds>(push_entities(component_manager, std::move(proc_unit)));
+//    proc_unit.set_expression_context(expression_context);
 //
-//    auto projected = gather_entities(component_manager, project.process(std::move(entity_ids))).as_range();
-//    ASSERT_EQ(1, projected.size());
-//    ASSERT_TRUE(projected[0].segments_.has_value());
-//    auto segments = projected[0].segments_.value();
-//    ASSERT_EQ(1, segments.size());
-//    auto segment = *segments[0];
-//    auto column_index = segment.column_index(output_column);
-//    ASSERT_TRUE(column_index.has_value());
-//    auto& projected_column = segment.column(*column_index);
+//    auto variant_data = proc_unit.get(expression_context->root_node_name_);
+//
+//    ASSERT_TRUE(std::holds_alternative<ColumnWithStrings>(variant_data));
+//    auto& projected_column = *std::get<ColumnWithStrings>(variant_data).column_;
 //
 //    // dense_floats_1 has fewer values than dense_floats_2
 //    ASSERT_EQ(lhs_input_column->last_row(), projected_column.last_row());
@@ -182,7 +186,7 @@ TEST(ProjectSparse, BinaryArithmeticSparseColSparseCol) {
 //                        projected_column.reference_at<double>(idx));
 //    }
 //}
-//
+
 //TEST(ProjectSparse, BinaryArithmeticSparseColShorterThanDenseCol) {
 //    using namespace arcticdb;
 //    auto component_manager = std::make_shared<ComponentManager>();

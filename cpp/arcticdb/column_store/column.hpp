@@ -691,10 +691,63 @@ public:
                           folly::Function<typename output_tdt::DataTypeTag::raw_type(typename left_input_tdt::DataTypeTag::raw_type, typename right_input_tdt::DataTypeTag::raw_type)>&& f) {
         auto left_input_data = left_input_column.data();
         auto right_input_data = right_input_column.data();
-        auto output_data = output_column.data();
-        std::transform(left_input_data.cbegin<left_input_tdt, false>(), left_input_data.cend<left_input_tdt, false>(), right_input_data.cbegin<right_input_tdt, false>(), output_data.begin<output_tdt, false>(), [&f](auto left_value, auto right_value) {
-            return f(left_value, right_value);
-        });
+        if (left_input_column.is_sparse() && right_input_column.is_sparse()) {
+            output_column.set_sparse_map(*left_input_column.opt_sparse_map() & *right_input_column.opt_sparse_map());
+            auto output_row_count = output_column.opt_sparse_map()->count();
+            output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
+            auto output_data = output_column.data();
+            auto output_it = output_data.begin<output_tdt, false, false>();
+            auto left_it = left_input_data.cbegin<left_input_tdt, true, true>();
+            auto right_it = right_input_data.cbegin<right_input_tdt, true, true>();
+            auto left_end = left_input_data.cend<left_input_tdt, true, true>();
+            auto right_end = right_input_data.cend<right_input_tdt, true, true>();
+            for (; left_it != left_end && right_it != right_end;) {
+                while (left_it->idx < right_it->idx && left_it != left_end) {
+                    ++left_it;
+                }
+                while (right_it->idx < left_it->idx && right_it != right_end) {
+                    ++right_it;
+                }
+                if ((left_it != left_end && right_it != right_end) && left_it->idx == right_it->idx) {
+                    *output_it++ = f(left_it->value, right_it->value);
+                    ++left_it;
+                    ++right_it;
+                }
+            }
+            output_column.set_row_data(left_input_column.last_row());
+        } else if (left_input_column.is_sparse() && !right_input_column.is_sparse()) {
+            if (right_input_column.last_row() >= left_input_column.last_row()) {
+                ARCTICDB_UNUSED auto output_row_count = left_input_column.opt_sparse_map()->count();
+            } else {
+                util::BitIndex sparse_index;
+                left_input_column.opt_sparse_map()->build_rs_index(&sparse_index);
+                ARCTICDB_UNUSED auto output_row_count = left_input_column.opt_sparse_map()->count_to(right_input_column.row_count(), sparse_index);
+            }
+        } else if (!left_input_column.is_sparse() && right_input_column.is_sparse()) {
+            if (left_input_column.last_row() >= right_input_column.last_row()) {
+                ARCTICDB_UNUSED auto output_row_count = right_input_column.opt_sparse_map()->count();
+            } else {
+                util::BitIndex sparse_index;
+                right_input_column.opt_sparse_map()->build_rs_index(&sparse_index);
+                ARCTICDB_UNUSED auto output_row_count = right_input_column.opt_sparse_map()->count_to(left_input_column.row_count(), sparse_index);
+            }
+        } else {
+            // Both dense. Could be different lengths if the data is semantically sparse, but happens to be dense in the first n rows
+            auto output_row_count = std::min(left_input_column.row_count(), right_input_column.row_count());
+            output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
+            auto output_data = output_column.data();
+            if (left_input_column.row_count() <= right_input_column.row_count()) {
+                std::transform(left_input_data.cbegin<left_input_tdt, false>(), left_input_data.cend<left_input_tdt, false>(), right_input_data.cbegin<right_input_tdt, false>(), output_data.begin<output_tdt, false>(), [&f](auto left_value, auto right_value) {
+                    return f(left_value, right_value);
+                });
+                output_column.set_row_data(left_input_column.last_row());
+            } else {
+                std::transform(right_input_data.cbegin<left_input_tdt, false>(), right_input_data.cend<left_input_tdt, false>(), left_input_data.cbegin<right_input_tdt, false>(), output_data.begin<output_tdt, false>(), [&f](auto right_value, auto left_value) {
+                    return f(left_value, right_value);
+                });
+                output_column.set_row_data(right_input_column.last_row());
+            }
+        }
     }
 
     template<typename input_tdt>

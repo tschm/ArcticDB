@@ -145,9 +145,9 @@ struct ColumnData {
     };
 
   public:
-    template<typename TDT, bool enumerate, bool constant>
-    class ColumnDataIterator: public boost::iterator_facade<
-            ColumnDataIterator<TDT, enumerate, constant>,
+    template<typename TDT, bool enumerate, bool constant, bool sparse=false>
+    class ColumnDataForwardIterator: public boost::iterator_facade<
+            ColumnDataForwardIterator<TDT, enumerate, constant, sparse>,
             std::conditional_t<enumerate,
                 std::conditional_t<constant,
                     const Enumeration<typename TDT::DataTypeTag::raw_type, constant>,
@@ -172,32 +172,35 @@ struct ColumnData {
                             >
                         >;
     public:
-        ColumnDataIterator() = delete;
+        ColumnDataForwardIterator() = delete;
 
         // Used to construct [c]begin iterators
-        explicit ColumnDataIterator(ColumnData* parent):
+        explicit ColumnDataForwardIterator(ColumnData* parent):
         parent_(parent)
         {
             increment_block();
             if constexpr (enumerate) {
+                if constexpr (sparse) {
+                    idx_ = parent_->bit_vector()->get_first();
+                }
                 enumeration_.emplace(idx_, *ptr_);
             }
         }
 
         // Used to construct [c]end iterators
-        explicit ColumnDataIterator(ColumnData* parent, RawType* end_ptr):
+        explicit ColumnDataForwardIterator(ColumnData* parent, RawType* end_ptr):
                 parent_(parent),
                 ptr_(end_ptr) {}
 
-        template <class OtherValue, bool OtherEnumerate, bool OtherConst>
-        ColumnDataIterator(ColumnDataIterator<OtherValue, OtherEnumerate, OtherConst> const& other):
+        template <class OtherValue, bool OtherEnumerate, bool OtherConst, bool OtherSparse>
+        ColumnDataForwardIterator(ColumnDataForwardIterator<OtherValue, OtherEnumerate, OtherConst, OtherSparse> const& other):
         parent_(other.parent_),
         opt_block_(other.opt_block_),
         remaining_values_in_block_(other.remaining_values_in_block_),
         ptr_(other.ptr_) {}
     private:
         friend class boost::iterator_core_access;
-        template <class, bool, bool> friend class ColumnDataIterator;
+        template <class, bool, bool, bool> friend class ColumnDataIterator;
 
         void increment() {
             if (ARCTICDB_LIKELY(remaining_values_in_block_ > 0)) {
@@ -207,7 +210,12 @@ struct ColumnData {
                 increment_block();
             }
             if constexpr (enumerate) {
-                enumeration_.emplace(++idx_, *ptr_);
+                if constexpr (sparse) {
+                    idx_ = parent_->bit_vector()->get_next(idx_);
+                } else {
+                    ++idx_;
+                }
+                enumeration_.emplace(idx_, *ptr_);
             }
         }
 
@@ -223,8 +231,8 @@ struct ColumnData {
             }
         }
 
-        template <typename OtherValue, bool OtherEnumerate, bool OtherConst>
-        bool equal(ColumnDataIterator<OtherValue, OtherEnumerate, OtherConst> const& other) const {
+        template <typename OtherValue, bool OtherEnumerate, bool OtherConst, bool OtherSparse>
+        bool equal(ColumnDataForwardIterator<OtherValue, OtherEnumerate, OtherConst, OtherSparse> const& other) const {
             return parent_ == other.parent_ && ptr_ == other.ptr_;
         }
 
@@ -259,18 +267,26 @@ struct ColumnData {
 
     ARCTICDB_MOVE_COPY_DEFAULT(ColumnData)
 
-    template<typename TDT, bool enumerate>
-    ColumnDataIterator<TDT, enumerate, false> begin() {
-        return ColumnDataIterator<TDT, enumerate, false>(this);
+    template<typename TDT, bool enumerate, bool sparse=false>
+    ColumnDataForwardIterator<TDT, enumerate, false, sparse> begin() {
+        if constexpr (sparse) {
+            return ColumnDataForwardIterator<TDT, enumerate, false, true>(this);
+        } else {
+            return ColumnDataForwardIterator<TDT, enumerate, false, false>(this);
+        }
     }
 
-    template<typename TDT, bool enumerate>
-    ColumnDataIterator<TDT, enumerate, true> cbegin() {
-        return ColumnDataIterator<TDT, enumerate, true>(this);
+    template<typename TDT, bool enumerate, bool sparse=false>
+    ColumnDataForwardIterator<TDT, enumerate, true, sparse> cbegin() {
+        if constexpr (sparse) {
+            return ColumnDataForwardIterator<TDT, enumerate, true, true>(this);
+        } else {
+            return ColumnDataForwardIterator<TDT, enumerate, true, false>(this);
+        }
     }
 
-    template<typename TDT, bool enumerate>
-    ColumnDataIterator<TDT, enumerate, false> end() {
+    template<typename TDT, bool enumerate, bool sparse=false>
+    ColumnDataForwardIterator<TDT, enumerate, false, sparse> end() {
         using RawType = typename TDT::DataTypeTag::raw_type;
         RawType* end_ptr{nullptr};
         if(!data_->blocks().empty()) {
@@ -278,11 +294,15 @@ struct ColumnData {
             auto typed_block_data = next_typed_block<TDT>(block);
             end_ptr = typed_block_data.data() + typed_block_data.row_count();
         }
-        return ColumnDataIterator<TDT, enumerate, false>(this, end_ptr);
+        if constexpr (sparse) {
+            return ColumnDataForwardIterator<TDT, enumerate, false, true>(this, end_ptr);
+        } else {
+            return ColumnDataForwardIterator<TDT, enumerate, false, false>(this, end_ptr);
+        }
     }
 
-    template<typename TDT, bool enumerate>
-    ColumnDataIterator<TDT, enumerate, true> cend() {
+    template<typename TDT, bool enumerate, bool sparse=false>
+    ColumnDataForwardIterator<TDT, enumerate, true, sparse> cend() {
         using RawType = typename TDT::DataTypeTag::raw_type;
         const RawType* end_ptr{nullptr};
         if(!data_->blocks().empty()) {
@@ -290,7 +310,11 @@ struct ColumnData {
             auto typed_block_data = next_typed_block<TDT>(block);
             end_ptr = typed_block_data.data() + typed_block_data.row_count();
         }
-        return ColumnDataIterator<TDT, enumerate, true>(this, end_ptr);
+        if constexpr (sparse) {
+            return ColumnDataForwardIterator<TDT, enumerate, true, true>(this, end_ptr);
+        } else {
+            return ColumnDataForwardIterator<TDT, enumerate, true, false>(this, end_ptr);
+        }
     }
 
     TypeDescriptor type() const {
