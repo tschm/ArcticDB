@@ -25,7 +25,6 @@
 #include <optional>
 #include <variant>
 
-
 #ifdef _WIN32
 // `ssize_t` is defined in `sys/types.h` but it is not ISO C (it simply is POSIX), hence its is not defined natively by MSVC.
 // See: https://learn.microsoft.com/en-us/windows/win32/winprog/windows-data-types

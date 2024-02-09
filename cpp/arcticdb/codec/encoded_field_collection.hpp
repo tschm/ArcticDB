@@ -30,6 +30,14 @@ public:
         return buffer_.empty();
     }
 
+    [[nodiscard]] size_t bytes() const {
+        return buffer_.bytes();
+    }
+
+    [[nodiscard]] const uint8_t* data() const {
+        return buffer_.data();
+    }
+
     [[nodiscard]] size_t get_offset(size_t pos) const {
         util::check(pos < offsets_.size(), "Offset {} exceeds offsets size {}", pos, offsets_.size());
         return offsets_[pos];

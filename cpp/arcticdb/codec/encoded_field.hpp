@@ -7,8 +7,6 @@
 
 #pragma once
 
-#include <arcticdb/codec/segment.hpp>
-
 #pragma pack(push)
 #pragma pack(1)
 
@@ -135,9 +133,29 @@ struct BlockCodec {
         return pass;
     }
 
+    const ZstdCodec& zstd() const {
+        util::check(codec_ == Codec::Zstd, "Not a zstd codec");
+        return *reinterpret_cast<ZstdCodec*>(data());
+    }
+
+    const Lz4Codec& *mutable_lz4() const {
+        util::check(codec_ == Codec::Lz4, "Not an lz4 codec");
+        return *reinterpret_cast<Lz4Codec*>(data());
+    }
+
+    const TurboPFORCodec& turbopfor() const {
+        util::check(codec_ == Codec::Tp4, "Not a turbopfor codec");
+        return *reinterpret_cast<Tp4Codec*>(data());
+    }
+
+    const PassthroughCodec& passthrough() const {
+        util::check(codec_ == Codec::Passthrough, "Not a passthrough codec");
+        return *reinterpret_cast<PassthroughCodec*>(data());
+    }
+
     arcticdb::proto::encoding::VariantCodec::CodecCase codec_case() const {
         switch (codec_) {
-        case Codec::Zstd:return arcticdb::proto::encoding::VariantCodec::kLz4;
+        case Codec::Zstd:return arcticdb::proto::encoding::VariantCodec::kZstd;
         case Codec::Lz4:return arcticdb::proto::encoding::VariantCodec::kLz4;
         case Codec::TurboPfor:return arcticdb::proto::encoding::VariantCodec::kTp4;
         case Codec::Passthrough:return arcticdb::proto::encoding::VariantCodec::kPassthrough;
@@ -217,7 +235,6 @@ struct EncodedBlock {
 };
 
 struct EncodedField {
-
     enum class EncodedFieldType : uint8_t {
         Unknown,
         kNdarray,
