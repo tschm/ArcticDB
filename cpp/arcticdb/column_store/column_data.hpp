@@ -200,7 +200,7 @@ struct ColumnData {
         ptr_(other.ptr_) {}
     private:
         friend class boost::iterator_core_access;
-        template <class, bool, bool, bool> friend class ColumnDataIterator;
+        template <class, bool, bool, bool> friend class ColumnDataForwardIterator;
 
         void increment() {
             if (ARCTICDB_LIKELY(remaining_values_in_block_ > 0)) {
@@ -232,7 +232,7 @@ struct ColumnData {
         }
 
         template <typename OtherValue, bool OtherEnumerate, bool OtherConst, bool OtherSparse>
-        bool equal(ColumnDataForwardIterator<OtherValue, OtherEnumerate, OtherConst, OtherSparse> const& other) const {
+        bool equal(const ColumnDataForwardIterator<OtherValue, OtherEnumerate, OtherConst, OtherSparse>& other) const {
             return parent_ == other.parent_ && ptr_ == other.ptr_;
         }
 
@@ -251,6 +251,215 @@ struct ColumnData {
         // Unused if enumerate is false
         ssize_t idx_{0};
         std::optional<Enumeration<typename TDT::DataTypeTag::raw_type, constant>> enumeration_{std::nullopt};
+    };
+
+    template<typename TDT, bool constant, bool sparse=false>
+    class ColumnDataRandomAccessIterator: public boost::iterator_facade<
+            ColumnDataRandomAccessIterator<TDT, constant, sparse>,
+            std::conditional_t<sparse,
+                std::conditional_t<constant, const std::optional<typename TDT::DataTypeTag::raw_type>, std::optional<typename TDT::DataTypeTag::raw_type>>,
+                std::conditional_t<constant, const typename TDT::DataTypeTag::raw_type, typename TDT::DataTypeTag::raw_type>
+            >,
+            boost::random_access_traversal_tag
+    > {
+        using RawType = std::conditional_t<constant, const typename TDT::DataTypeTag::raw_type, typename TDT::DataTypeTag::raw_type>;
+        using DerefType = std::conditional_t<sparse,
+                std::conditional_t<constant, const std::optional<typename TDT::DataTypeTag::raw_type>, std::optional<typename TDT::DataTypeTag::raw_type>>,
+                std::conditional_t<constant, const typename TDT::DataTypeTag::raw_type, typename TDT::DataTypeTag::raw_type>
+        >;
+    public:
+        ColumnDataRandomAccessIterator() = delete;
+
+        explicit ColumnDataRandomAccessIterator(ColumnData* parent, bool begin)
+        {
+            if constexpr(sparse) {
+                bit_vector_ = parent->bit_vector_;
+            }
+            blocks_.reserve(parent->num_blocks());
+            while (auto opt_block = parent->next<TDT>()) {
+                blocks_.emplace_back(*opt_block);
+            }
+            if (!blocks_.empty() && begin) {
+                block_idx_ = 0;
+                block_pos_ = 0;
+                remaining_values_in_block_ = blocks_.front().row_count();
+                overall_idx_ = 0;
+                if constexpr (constant) {
+                    ptr_ = reinterpret_cast<RawType *>(blocks_[*block_idx_].data() + block_pos_);
+                } else {
+                    ptr_ = const_cast<RawType *>(blocks_[*block_idx_].data() + block_pos_);
+                }
+                if constexpr (sparse) {
+                    if (bit_vector_->get_bit(0)) {
+                        value_.emplace(*ptr_);
+                    }
+                }
+            }
+        }
+
+        template <class OtherValue, bool OtherConst, bool OtherSparse>
+        ColumnDataRandomAccessIterator(ColumnDataRandomAccessIterator<OtherValue, OtherConst, OtherSparse> const& other):
+                blocks_(other.blocks_),
+                block_idx_(other.block_idx_),
+                block_pos_(other.block_pos_),
+                remaining_values_in_block_(other.remaining_values_in_block_),
+                overall_idx_(other.overall_idx_),
+                ptr_(other.ptr_),
+                bit_vector_(other.bit_vector_),
+                value_(other.value_)
+                {}
+
+    private:
+        friend class boost::iterator_core_access;
+        template <class, bool, bool> friend class ColumnDataRandomAccessIterator;
+
+        void increment() {
+            if constexpr (sparse) {
+                auto next_idx = bit_vector_->get_next(overall_idx_);
+                if (ARCTICDB_UNLIKELY(next_idx == overall_idx_ + 1)) {
+                    if (ARCTICDB_LIKELY(remaining_values_in_block_ > 0)) {
+                        ++ptr_;
+                        value_.emplace(*ptr_);
+                        ++block_pos_;
+                        --remaining_values_in_block_;
+                    } else if (ARCTICDB_LIKELY(block_idx_.has_value())) {
+                        increment_block();
+                    } else {
+                        internal::raise<ErrorCode::E_ASSERTION_FAILURE>(
+                                "ColumnDataRandomAccessIterator::increment() called on unitialized iterator");
+                    }
+                } else {
+                    value_ = std::nullopt;
+                }
+            } else {
+                if (ARCTICDB_LIKELY(remaining_values_in_block_ > 0)) {
+                    ++ptr_;
+                    ++block_pos_;
+                    --remaining_values_in_block_;
+                } else if (ARCTICDB_LIKELY(block_idx_.has_value())) {
+                    increment_block();
+                } else {
+                    internal::raise<ErrorCode::E_ASSERTION_FAILURE>(
+                            "ColumnDataRandomAccessIterator::increment() called on unitialized iterator");
+                }
+            }
+            ++overall_idx_;
+        }
+
+        void increment_block() {
+            ++(*block_idx_);
+            block_pos_ = 0;
+            if(ARCTICDB_LIKELY(*block_idx_ < blocks_.size())) {
+                remaining_values_in_block_ = blocks_[*block_idx_].row_count();
+                if constexpr(constant) {
+                    ptr_ = reinterpret_cast<RawType*>(blocks_[*block_idx_].data());
+                } else {
+                    ptr_ = const_cast<RawType*>(blocks_[*block_idx_].data());
+                }
+            } else {
+                // TODO: Factor out into reset() method
+                block_idx_ = std::nullopt;
+                block_pos_ = 0;
+                remaining_values_in_block_ = 0;
+                overall_idx_ = 0;
+                ptr_ = nullptr;
+            }
+        }
+
+        void decrement() {
+            if constexpr(sparse) {
+                if (ARCTICDB_UNLIKELY(prev_set_bit_ + 1 == overall_idx_)) {
+                    if (ARCTICDB_LIKELY(block_pos_ > 0)) {
+                        --ptr_;
+                        value_.emplace(*ptr_);
+                        --block_pos_;
+                        ++remaining_values_in_block_;
+                    } else if (ARCTICDB_LIKELY(block_idx_.has_value())) {
+                        decrement_block();
+                    } else {
+                        internal::raise<ErrorCode::E_ASSERTION_FAILURE>(
+                                "ColumnDataRandomAccessIterator::decrement() called on unitialized iterator");
+                    }
+                } else {
+                    value_ = std::nullopt;
+                }
+            } else {
+                if (ARCTICDB_LIKELY(block_pos_ > 0)) {
+                    --ptr_;
+                    --block_pos_;
+                    ++remaining_values_in_block_;
+                } else if (ARCTICDB_LIKELY(block_idx_.has_value())) {
+                    decrement_block();
+                } else {
+                    internal::raise<ErrorCode::E_ASSERTION_FAILURE>(
+                            "ColumnDataRandomAccessIterator::decrement() called on unitialized iterator");
+                }
+            }
+            --overall_idx_;
+        }
+
+        void decrement_block() {
+            if(ARCTICDB_LIKELY(*block_idx_ > 0)) {
+                --(*block_idx_);
+                block_pos_ = blocks_[*block_idx_].row_count() - 1;
+                remaining_values_in_block_ = 0;
+                if constexpr(constant) {
+                    ptr_ = reinterpret_cast<RawType*>(blocks_[*block_idx_].data()) + block_pos_;
+                } else {
+                    ptr_ = const_cast<RawType*>(blocks_[*block_idx_].data()) + block_pos_;
+                }
+            } else {
+                // TODO: Factor out into reset() method
+                block_idx_ = std::nullopt;
+                block_pos_ = 0;
+                remaining_values_in_block_ = 0;
+                overall_idx_ = 0;
+                ptr_ = nullptr;
+            }
+        }
+
+        template <typename OtherValue, bool OtherConst, bool OtherSparse>
+        bool equal(const ColumnDataRandomAccessIterator<OtherValue, OtherConst, OtherSparse>& other) const {
+            return blocks_ == other.blocks_ && ptr_ == other.ptr_;
+        }
+
+        template <typename OtherValue, bool OtherConst, bool OtherSparse>
+        bool distance_to(const ColumnDataRandomAccessIterator<OtherValue, OtherConst, OtherSparse>& other) const {
+            return other.overall_idx_ - overall_idx_;
+        }
+
+        void advance(ptrdiff_t n){
+            // TODO: Template on enum stating whether chunked buffer has 1 block, regularly sized blocks, regularly
+            //  sized blocks to a point, or totally irregularly sized blocks, and make this as efficient as possible in each case
+            if (n > 0) {
+                while (n-- > 0) {
+                    increment();
+                }
+            } else {
+                while (n++ < 0) {
+                    decrement();
+                }
+            }
+        }
+
+        DerefType& dereference() const {
+            if constexpr (sparse) {
+                return value_;
+            } else {
+                return *ptr_;
+            }
+        }
+
+        std::vector<TypedBlockData<TDT>> blocks_;
+        std::optional<std::size_t> block_idx_{std::nullopt};
+        std::size_t block_pos_{0};
+        std::size_t remaining_values_in_block_{0};
+        std::size_t overall_idx_{0};
+        RawType* ptr_{nullptr};
+        // Only used if sparse
+        const util::BitMagic* bit_vector_{nullptr};
+        size_t prev_set_bit_{0};
+        std::optional<typename TDT::DataTypeTag::raw_type> value_;
     };
 
     ColumnData(
@@ -314,6 +523,24 @@ struct ColumnData {
             return ColumnDataForwardIterator<TDT, enumerate, true, true>(this, end_ptr);
         } else {
             return ColumnDataForwardIterator<TDT, enumerate, true, false>(this, end_ptr);
+        }
+    }
+
+    template<typename TDT, bool sparse=false>
+    ColumnDataRandomAccessIterator<TDT, false, sparse> begin_random_access() {
+        if constexpr (sparse) {
+            return ColumnDataRandomAccessIterator<TDT, false, true>(this, true);
+        } else {
+            return ColumnDataRandomAccessIterator<TDT, false, false>(this, true);
+        }
+    }
+
+    template<typename TDT, bool sparse=false>
+    ColumnDataRandomAccessIterator<TDT, true, sparse> cbegin_random_access() {
+        if constexpr (sparse) {
+            return ColumnDataRandomAccessIterator<TDT, true, true>(this, true);
+        } else {
+            return ColumnDataRandomAccessIterator<TDT, true, false>(this, true);
         }
     }
 
