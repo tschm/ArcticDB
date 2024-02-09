@@ -684,6 +684,38 @@ public:
         output_column.set_row_data(input_column.last_row());
     }
 
+    // TODO: Put this somewhere else
+    static void set_sparse_map_and_allocate_output_buffer(const Column& left_input_column, const Column& right_input_column, Column& output_column) {
+        size_t output_physical_rows;
+        size_t output_logical_rows;
+        std::optional<util::BitSet> output_sparse_map;
+        if (left_input_column.is_sparse() && right_input_column.is_sparse()) {
+            output_sparse_map = (*left_input_column.opt_sparse_map() & *right_input_column.opt_sparse_map());
+            output_sparse_map->resize(std::min(left_input_column.opt_sparse_map()->size(), right_input_column.opt_sparse_map()->size()));
+        } else if (left_input_column.is_sparse() && !right_input_column.is_sparse()) {
+            output_sparse_map = *left_input_column.opt_sparse_map();
+            if (left_input_column.last_row() > right_input_column.last_row()) {
+                output_sparse_map->resize(right_input_column.row_count());
+            }
+        } else if (!left_input_column.is_sparse() && right_input_column.is_sparse()) {
+            output_sparse_map = *right_input_column.opt_sparse_map();
+            if (left_input_column.last_row() < right_input_column.last_row()) {
+                output_sparse_map->resize(left_input_column.row_count());
+            }
+        } else {
+            // Both dense. Could be different lengths if the data is semantically sparse, but happens to be dense in the first n rows
+            output_physical_rows = std::min(left_input_column.row_count(), right_input_column.row_count());
+            output_logical_rows = output_physical_rows;
+        }
+        if (output_sparse_map.has_value()) {
+            output_physical_rows = output_sparse_map->count();
+            output_logical_rows = output_sparse_map->size();
+            output_column.set_sparse_map(std::move(*output_sparse_map));
+        }
+        output_column.allocate_data(output_physical_rows * get_type_size(output_column.type().data_type()));
+        output_column.set_row_data(output_logical_rows - 1);
+    }
+
     template<typename left_input_tdt, typename right_input_tdt, typename output_tdt>
     static void transform(const Column& left_input_column,
                           const Column& right_input_column,
@@ -691,84 +723,51 @@ public:
                           folly::Function<typename output_tdt::DataTypeTag::raw_type(typename left_input_tdt::DataTypeTag::raw_type, typename right_input_tdt::DataTypeTag::raw_type)>&& f) {
         auto left_input_data = left_input_column.data();
         auto right_input_data = right_input_column.data();
-        if (left_input_column.is_sparse() && right_input_column.is_sparse()) {
-            output_column.set_sparse_map(*left_input_column.opt_sparse_map() & *right_input_column.opt_sparse_map());
-            output_column.opt_sparse_map()->resize(std::min(left_input_column.opt_sparse_map()->size(), right_input_column.opt_sparse_map()->size()));
-            auto output_row_count = output_column.opt_sparse_map()->count();
-            output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
-            output_column.set_row_data(output_column.opt_sparse_map()->size() - 1);
-            auto output_data = output_column.data();
-            auto output_it = output_data.begin<output_tdt, false, false>();
-            auto left_it = left_input_data.cbegin_random_access<left_input_tdt, true>();
-            auto right_it = right_input_data.cbegin_random_access<right_input_tdt, true>();
-            size_t previous_set_bit{0};
-            for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
-                std::advance(left_it, *set_bit - previous_set_bit);
-                std::advance(right_it, *set_bit - previous_set_bit);
-                *output_it++ = f((*left_it).value(), (*right_it).value());
-                previous_set_bit = *set_bit;
-            }
-        } else if (left_input_column.is_sparse() && !right_input_column.is_sparse()) {
-            if (right_input_column.last_row() >= left_input_column.last_row()) {
-                output_column.set_sparse_map(*left_input_column.opt_sparse_map());
+        set_sparse_map_and_allocate_output_buffer(left_input_column, right_input_column, output_column);
+        auto output_data = output_column.data();
+        auto output_it = output_data.begin<output_tdt, false, false>();
+
+        // Both dense
+        if (!left_input_column.is_sparse() && !right_input_column.is_sparse()) {
+            if (left_input_column.row_count() <= right_input_column.row_count()) {
+                std::transform(left_input_data.cbegin<left_input_tdt, false>(), left_input_data.cend<left_input_tdt, false>(), right_input_data.cbegin<right_input_tdt, false>(), output_it, [&f](auto left_value, auto right_value) {
+                    return f(left_value, right_value);
+                });
             } else {
-                util::BitIndex sparse_index;
-                left_input_column.opt_sparse_map()->build_rs_index(&sparse_index);
-                output_column.set_sparse_map(*left_input_column.opt_sparse_map());
-                output_column.opt_sparse_map()->resize(right_input_column.row_count());
-            }
-            auto output_row_count = output_column.opt_sparse_map()->count();
-            output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
-            output_column.set_row_data(output_column.opt_sparse_map()->size() - 1);
-            auto output_data = output_column.data();
-            auto output_it = output_data.begin<output_tdt, false, false>();
-            auto left_it = left_input_data.cbegin_random_access<left_input_tdt, true>();
-            auto right_it = right_input_data.cbegin_random_access<right_input_tdt, false>();
-            size_t previous_set_bit{0};
-            for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
-                std::advance(left_it, *set_bit - previous_set_bit);
-                std::advance(right_it, *set_bit - previous_set_bit);
-                *output_it++ = f((*left_it).value(), *right_it);
-                previous_set_bit = *set_bit;
-            }
-        } else if (!left_input_column.is_sparse() && right_input_column.is_sparse()) {
-            if (left_input_column.last_row() >= right_input_column.last_row()) {
-                output_column.set_sparse_map(*right_input_column.opt_sparse_map());
-            } else {
-                util::BitIndex sparse_index;
-                right_input_column.opt_sparse_map()->build_rs_index(&sparse_index);
-                output_column.set_sparse_map(*right_input_column.opt_sparse_map());
-                output_column.opt_sparse_map()->resize(left_input_column.row_count());
-            }
-            auto output_row_count = output_column.opt_sparse_map()->count();
-            output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
-            output_column.set_row_data(output_column.opt_sparse_map()->size() - 1);
-            auto output_data = output_column.data();
-            auto output_it = output_data.begin<output_tdt, false, false>();
-            auto left_it = left_input_data.cbegin_random_access<left_input_tdt, false>();
-            auto right_it = right_input_data.cbegin_random_access<right_input_tdt, true>();
-            size_t previous_set_bit{0};
-            for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
-                std::advance(left_it, *set_bit - previous_set_bit);
-                std::advance(right_it, *set_bit - previous_set_bit);
-                *output_it++ = f(*left_it, (*right_it).value());
-                previous_set_bit = *set_bit;
+                std::transform(right_input_data.cbegin<left_input_tdt, false>(), right_input_data.cend<left_input_tdt, false>(), left_input_data.cbegin<right_input_tdt, false>(), output_it, [&f](auto right_value, auto left_value) {
+                    return f(left_value, right_value);
+                });
             }
         } else {
-            // Both dense. Could be different lengths if the data is semantically sparse, but happens to be dense in the first n rows
-            auto output_row_count = std::min(left_input_column.row_count(), right_input_column.row_count());
-            output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
-            auto output_data = output_column.data();
-            if (left_input_column.row_count() <= right_input_column.row_count()) {
-                std::transform(left_input_data.cbegin<left_input_tdt, false>(), left_input_data.cend<left_input_tdt, false>(), right_input_data.cbegin<right_input_tdt, false>(), output_data.begin<output_tdt, false>(), [&f](auto left_value, auto right_value) {
-                    return f(left_value, right_value);
-                });
-                output_column.set_row_data(left_input_column.last_row());
-            } else {
-                std::transform(right_input_data.cbegin<left_input_tdt, false>(), right_input_data.cend<left_input_tdt, false>(), left_input_data.cbegin<right_input_tdt, false>(), output_data.begin<output_tdt, false>(), [&f](auto right_value, auto left_value) {
-                    return f(left_value, right_value);
-                });
-                output_column.set_row_data(right_input_column.last_row());
+            // At least one sparse
+            size_t previous_set_bit{0};
+            if (left_input_column.is_sparse() && right_input_column.is_sparse()) {
+                auto left_it = left_input_data.cbegin_random_access<left_input_tdt, true>();
+                auto right_it = right_input_data.cbegin_random_access<right_input_tdt, true>();
+                for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
+                    std::advance(left_it, *set_bit - previous_set_bit);
+                    std::advance(right_it, *set_bit - previous_set_bit);
+                    *output_it++ = f((*left_it).value(), (*right_it).value());
+                    previous_set_bit = *set_bit;
+                }
+            } else if (left_input_column.is_sparse() && !right_input_column.is_sparse()) {
+                auto left_it = left_input_data.cbegin_random_access<left_input_tdt, true>();
+                auto right_it = right_input_data.cbegin_random_access<right_input_tdt, false>();
+                for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
+                    std::advance(left_it, *set_bit - previous_set_bit);
+                    std::advance(right_it, *set_bit - previous_set_bit);
+                    *output_it++ = f((*left_it).value(), *right_it);
+                    previous_set_bit = *set_bit;
+                }
+            } else if (!left_input_column.is_sparse() && right_input_column.is_sparse()) {
+                auto left_it = left_input_data.cbegin_random_access<left_input_tdt, false>();
+                auto right_it = right_input_data.cbegin_random_access<right_input_tdt, true>();
+                for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
+                    std::advance(left_it, *set_bit - previous_set_bit);
+                    std::advance(right_it, *set_bit - previous_set_bit);
+                    *output_it++ = f(*left_it, (*right_it).value());
+                    previous_set_bit = *set_bit;
+                }
             }
         }
     }
