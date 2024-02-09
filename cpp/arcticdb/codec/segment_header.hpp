@@ -3,6 +3,7 @@
 #include <arcticdb/codec/encoded_field.hpp>
 #include <arcticdb/codec/encoded_field_collection.hpp>
 #include <arcticdb/codec/codec.hpp>
+#include <arcticdb/codec/protobuf_encoding.hpp>
 
 namespace arcticdb {
 
@@ -72,10 +73,10 @@ public:
     SegmentHeader() = default;
 
     [[nodiscard]] bool empty() const {
-        return true;
+        return fields_.empty();
     }
 
-    bool compacted() const {
+    [[nodiscard]] bool compacted() const {
         return data_.compacted_;
     }
 
@@ -85,14 +86,6 @@ public:
 
     [[nodiscard]] size_t bytes() const {
         return sizeof(HeaderData) + fields_.bytes();
-    }
-
-    template <FieldOffset field_offset>
-     void check_set_to() const {
-        const auto offset = static_cast<size_t>(field_offset);
-        for(auto i = 0U; i < offset; ++i) {
-           util::check(data_.optional_fields_[i] != UNSET, "Expected field {} to be set before attempting to set {}", offset_names_[i], offset_names_[offset]);
-        }
     }
 
     [[nodiscard]] constexpr size_t as_offset(FieldOffset field_offset) const {
@@ -134,7 +127,7 @@ public:
     template <FieldOffset field_offset>
     [[nodiscard]] const EncodedField& get_field() const {
         util::check(has_field(field_offset), "Field {} has not been set", offset_name(field_offset));
-        return fields_.at(offset_[field_offset]);
+        return fields_.at(offset_[as_offset(field_offset)]);
     }
 
     [[nodiscard]] const EncodedField& metadata_field() const {
@@ -181,9 +174,35 @@ public:
         memcpy(dst, fields_.data(), fields_.bytes());
     }
 
+    void deserialize_proto_field(FieldOffset field_offset, CursoredBuffer<Buffer>& buffer, const arcticdb::proto::encoding::EncodedField& field, size_t& pos) {
+        data_.optional_fields_[as_offset(field_offset)] = true;
+        offset_[as_offset(field_offset)] = pos++;
+        const auto field_size = calc_encoded_field_buffer_size(field);
+        buffer.ensure<uint8_t>(field_size);
+        auto* data = buffer.data();
+        encoded_field_from_proto(field, *reinterpret_cast<EncodedField*>(data));
+    }
 
     void deserialize_from_proto(const arcticdb::proto::encoding::SegmentHeader& header) {
+        data_.encoding_version_ = EncodingVersion(header.encoding_version());
+        data_.compacted_ = header.compacted();
 
+        auto pos = 0UL;
+        CursoredBuffer<Buffer> buffer;
+        if(header.has_metadata_field())
+            deserialize_proto_field(FieldOffset::METADATA, buffer, header.descriptor_field(), pos);
+
+        if(header.has_string_pool_field())
+            deserialize_proto_field(FieldOffset::STRING_POOL, buffer, header.string_pool_field(), pos);
+
+        if(header.has_descriptor_field())
+            deserialize_proto_field(FieldOffset::DESCRIPTOR, buffer, header.descriptor_field(), pos);
+        
+        if(header.has_index_descriptor_field())
+            deserialize_proto_field(FieldOffset::INDEX, buffer, header.index_descriptor_field(), pos);
+
+        if(header.has_column_fields())
+            deserialize_proto_field(FieldOffset::COLUMN, buffer, header.column_fields(), pos);
     }
 
     void deserialize_from_bytes(const uint8_t* data, size_t header_size) {

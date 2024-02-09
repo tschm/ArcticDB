@@ -6,7 +6,7 @@
 
 namespace arcticdb {
 
-size_t calc_encoded_field_buffer_size(arcticdb::proto::encoding::EncodedField& field) {
+size_t calc_encoded_field_buffer_size(const arcticdb::proto::encoding::EncodedField& field) {
     size_t bytes = EncodedField::Size;
     util::check(field.has_ndarray(), "Only ndarray translations supported");
     const auto& ndarray = field.ndarray();
@@ -88,6 +88,22 @@ void encoded_field_from_proto(const arcticdb::proto::encoding::EncodedField& inp
     }
 }
 
-void proto_from_encoded_field(EncodedField& field, arcticdb::proto)
+void proto_from_encoded_field(EncodedField& input, arcticdb::proto::encoding::EncodedField& output) {
+    util::check(input.has_ndarray(), "Only ndarray fields supported for v1 encoding");
+    const auto& input_ndarray = input.ndarray();
+    auto* output_ndarray = output.mutable_ndarray();
+
+    output_ndarray->set_items_count(input_ndarray.items_count());
+    util::check(input_ndarray.shapes_size() < 2, "Unexpected number of shapes in proto translation");
+    if(input_ndarray.shapes_size() == 1) {
+        auto* shape_block = output_ndarray->add_shapes();
+        proto_from_block(input_ndarray.shapes(0), *shape_block);
+    }
+
+    for(auto i = 0; i < input_ndarray.values_size(); ++i) {
+        auto* value_block = output_ndarray->add_values();
+        proto_from_block(input_ndarray.values(i), *value_block);
+    }
+}
 
 } //namespace arcticdb
