@@ -692,9 +692,8 @@ public:
         auto left_input_data = left_input_column.data();
         auto right_input_data = right_input_column.data();
         if (left_input_column.is_sparse() && right_input_column.is_sparse()) {
-            // TODO: This & produces a bitset with size max(left.size(), right.size()) bitsets, but all of the values after min(left.size(), right.size()) will be false
-            // Shrink so that last bit is always true
             output_column.set_sparse_map(*left_input_column.opt_sparse_map() & *right_input_column.opt_sparse_map());
+            output_column.opt_sparse_map()->resize(std::min(left_input_column.opt_sparse_map()->size(), right_input_column.opt_sparse_map()->size()));
             auto output_row_count = output_column.opt_sparse_map()->count();
             output_column.allocate_data(output_row_count * get_type_size(output_column.type().data_type()));
             output_column.set_row_data(output_column.opt_sparse_map()->size() - 1);

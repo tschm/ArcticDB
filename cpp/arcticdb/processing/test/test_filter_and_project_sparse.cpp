@@ -129,7 +129,7 @@ TEST(ProjectSparse, BinaryArithmeticSparseColSparseCol) {
     auto& projected_column = *std::get<ColumnWithStrings>(variant_data).column_;
 
     // sparse_floats_1 has fewer values than sparse_floats_2
-    ASSERT_EQ(rhs_input_column->last_row(), projected_column.last_row());
+    ASSERT_EQ(lhs_input_column->last_row(), projected_column.last_row());
     ASSERT_TRUE(projected_column.opt_sparse_map().has_value());
     ASSERT_EQ(*lhs_input_column->opt_sparse_map() & *rhs_input_column->opt_sparse_map(), *projected_column.opt_sparse_map());
     ASSERT_EQ(projected_column.row_count(), projected_column.opt_sparse_map()->count());
