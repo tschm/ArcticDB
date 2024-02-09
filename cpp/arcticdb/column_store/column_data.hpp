@@ -424,8 +424,8 @@ struct ColumnData {
         }
 
         template <typename OtherValue, bool OtherConst, bool OtherSparse>
-        bool distance_to(const ColumnDataRandomAccessIterator<OtherValue, OtherConst, OtherSparse>& other) const {
-            return other.overall_idx_ - overall_idx_;
+        ssize_t distance_to(const ColumnDataRandomAccessIterator<OtherValue, OtherConst, OtherSparse>& other) const {
+            return static_cast<ssize_t>(other.overall_idx_) - static_cast<ssize_t>(overall_idx_);
         }
 
         void advance(ptrdiff_t n){
