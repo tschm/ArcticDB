@@ -701,15 +701,12 @@ public:
             auto output_it = output_data.begin<output_tdt, false, false>();
             auto left_it = left_input_data.cbegin_random_access<left_input_tdt, true>();
             auto right_it = right_input_data.cbegin_random_access<right_input_tdt, true>();
-            size_t set_bit_idx{0};
-            if(output_column.opt_sparse_map()->get_bit(set_bit_idx)) {
+            size_t previous_set_bit{0};
+            for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
+                std::advance(left_it, *set_bit - previous_set_bit);
+                std::advance(right_it, *set_bit - previous_set_bit);
                 *output_it++ = f((*left_it).value(), (*right_it).value());
-            }
-            while (auto next_set_bit_idx = output_column.opt_sparse_map()->get_next(set_bit_idx)) {
-                std::advance(left_it, next_set_bit_idx - set_bit_idx);
-                std::advance(right_it, next_set_bit_idx - set_bit_idx);
-                *output_it++ = f((*left_it).value(), (*right_it).value());
-                set_bit_idx = next_set_bit_idx;
+                previous_set_bit = *set_bit;
             }
         } else if (left_input_column.is_sparse() && !right_input_column.is_sparse()) {
             if (right_input_column.last_row() >= left_input_column.last_row()) {
@@ -727,15 +724,12 @@ public:
             auto output_it = output_data.begin<output_tdt, false, false>();
             auto left_it = left_input_data.cbegin_random_access<left_input_tdt, true>();
             auto right_it = right_input_data.cbegin_random_access<right_input_tdt, false>();
-            size_t set_bit_idx{0};
-            if(output_column.opt_sparse_map()->get_bit(set_bit_idx)) {
-                *output_it++ = f((*left_it).value(), (*right_it));
-            }
-            while (auto next_set_bit_idx = output_column.opt_sparse_map()->get_next(set_bit_idx)) {
-                std::advance(left_it, next_set_bit_idx - set_bit_idx);
-                std::advance(right_it, next_set_bit_idx - set_bit_idx);
-                *output_it++ = f((*left_it).value(), (*right_it));
-                set_bit_idx = next_set_bit_idx;
+            size_t previous_set_bit{0};
+            for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
+                std::advance(left_it, *set_bit - previous_set_bit);
+                std::advance(right_it, *set_bit - previous_set_bit);
+                *output_it++ = f((*left_it).value(), *right_it);
+                previous_set_bit = *set_bit;
             }
         } else if (!left_input_column.is_sparse() && right_input_column.is_sparse()) {
             if (left_input_column.last_row() >= right_input_column.last_row()) {
@@ -753,15 +747,12 @@ public:
             auto output_it = output_data.begin<output_tdt, false, false>();
             auto left_it = left_input_data.cbegin_random_access<left_input_tdt, false>();
             auto right_it = right_input_data.cbegin_random_access<right_input_tdt, true>();
-            size_t set_bit_idx{0};
-            if(output_column.opt_sparse_map()->get_bit(set_bit_idx)) {
+            size_t previous_set_bit{0};
+            for (auto set_bit = output_column.opt_sparse_map()->first(); set_bit < output_column.opt_sparse_map()->end(); ++set_bit) {
+                std::advance(left_it, *set_bit - previous_set_bit);
+                std::advance(right_it, *set_bit - previous_set_bit);
                 *output_it++ = f(*left_it, (*right_it).value());
-            }
-            while (auto next_set_bit_idx = output_column.opt_sparse_map()->get_next(set_bit_idx)) {
-                std::advance(left_it, next_set_bit_idx - set_bit_idx);
-                std::advance(right_it, next_set_bit_idx - set_bit_idx);
-                *output_it++ = f(*left_it, (*right_it).value());
-                set_bit_idx = next_set_bit_idx;
+                previous_set_bit = *set_bit;
             }
         } else {
             // Both dense. Could be different lengths if the data is semantically sparse, but happens to be dense in the first n rows
