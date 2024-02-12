@@ -4,14 +4,11 @@
 #include <arcticdb/codec/encoded_field_collection.hpp>
 #include <arcticdb/codec/codec.hpp>
 #include <arcticdb/codec/protobuf_encoding.hpp>
+#include <folly/container/Enumerate.h>
+#include <arcticdb/util/cursored_buffer.hpp>
+#include <arcticdb/codec/encoding_version.hpp>
 
 namespace arcticdb {
-
-enum class EncodingVersion : uint16_t {
-    V1 = 0,
-    V2 = 1,
-    COUNT
-};
 
 constexpr static uint16_t MAGIC_NUMBER = 0xFA57;
 
@@ -43,8 +40,7 @@ class SegmentHeader {
 
     HeaderData data_;
     EncodedFieldCollection fields_;
-    std::array<uint32_t, 5> offset_;
-
+    std::array<uint32_t, 5> offset_ = {};
 
     enum class FieldOffset : uint8_t {
         METADATA,
@@ -64,11 +60,12 @@ class SegmentHeader {
 
     static constexpr bool UNSET = false;
 
-
 public:
     explicit SegmentHeader(EncodingVersion encoding_version) {
         data_.encoding_version_ = encoding_version;
     }
+
+    ARCTICDB_MOVE_ONLY_DEFAULT(SegmentHeader)
 
     SegmentHeader() = default;
 
@@ -88,7 +85,7 @@ public:
         return sizeof(HeaderData) + fields_.bytes();
     }
 
-    [[nodiscard]] constexpr size_t as_offset(FieldOffset field_offset) const {
+    [[nodiscard]] static constexpr size_t as_offset(FieldOffset field_offset) {
         return static_cast<size_t>(field_offset);
     }
 
@@ -100,7 +97,7 @@ public:
         return offset_names_[as_offset(field_offset)];
     }
 
-    [[nodiscard]] constexpr bool has_field(FieldOffset field_offset) const {
+    [[nodiscard]] bool has_field(FieldOffset field_offset) const {
         return get_offset(field_offset) != UNSET;
     }
 
@@ -144,6 +141,7 @@ public:
     [[nodiscard]] const EncodedField& index_descriptor_field() const {
         return get_field<FieldOffset::METADATA>();
     }
+
     [[nodiscard]] const EncodedField& column_fields() const {
         return get_field<FieldOffset::METADATA>();
     }
@@ -162,19 +160,37 @@ public:
 
     void serialize_to_proto(uint8_t* dst) const {
         arcticdb::proto::encoding::SegmentHeader segment_header;
+        if(has_metadata_field())
+            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
+
+        if(has_string_pool_field())
+            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
+
+        if(has_descriptor_field())
+            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
+
+        if(has_index_descriptor_field())
+            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
+
+        if(has_column_fields())
+            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
+
         const auto hdr_size = segment_header.ByteSizeLong();
-        // TODO set some stuff
         google::protobuf::io::ArrayOutputStream aos(dst + FIXED_HEADER_SIZE, static_cast<int>(hdr_size));
         segment_header.SerializeToZeroCopyStream(&aos);
     }
 
-    void serialize_to_bytes(uint8_t* dst) {
+    void serialize_to_bytes(uint8_t* dst) const {
         memcpy(dst, &data_, sizeof(HeaderData));
         dst += sizeof(HeaderData);
         memcpy(dst, fields_.data(), fields_.bytes());
     }
 
-    void deserialize_proto_field(FieldOffset field_offset, CursoredBuffer<Buffer>& buffer, const arcticdb::proto::encoding::EncodedField& field, size_t& pos) {
+    void deserialize_proto_field(
+            FieldOffset field_offset,
+            CursoredBuffer<Buffer>& buffer,
+            const arcticdb::proto::encoding::EncodedField& field,
+            size_t& pos) {
         data_.optional_fields_[as_offset(field_offset)] = true;
         offset_[as_offset(field_offset)] = pos++;
         const auto field_size = calc_encoded_field_buffer_size(field);
@@ -197,7 +213,7 @@ public:
 
         if(header.has_descriptor_field())
             deserialize_proto_field(FieldOffset::DESCRIPTOR, buffer, header.descriptor_field(), pos);
-        
+
         if(header.has_index_descriptor_field())
             deserialize_proto_field(FieldOffset::INDEX, buffer, header.index_descriptor_field(), pos);
 

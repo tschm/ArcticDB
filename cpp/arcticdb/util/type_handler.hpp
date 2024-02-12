@@ -11,6 +11,7 @@
 #include <arcticdb/column_store/chunked_buffer.hpp>
 #include <arcticdb/util/buffer_holder.hpp>
 #include <arcticdb/codec/variant_encoded_field_collection.hpp>
+#include <arcticdb/codec/segment_header.hpp>
 
 #include <folly/Poly.h>
 

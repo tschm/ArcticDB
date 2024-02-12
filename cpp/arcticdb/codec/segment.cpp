@@ -137,7 +137,7 @@ std::pair<SegmentHeader, FieldCollection> decode_header_and_fields(const uint8_t
        else
            fields = deserialize_fields_collection(fields_ptr, segment_header);
     } else {
-        segment_header.deserialize_from_bytes(header_ptr);
+        segment_header.deserialize_from_bytes(header_ptr, fixed_hdr->header_bytes);
         util::check(segment_header.encoding_version() == EncodingVersion::V2, "Expected V2 encoding in binary header");
         fields = deserialize_fields_collection(fields_ptr, segment_header);
     }
@@ -170,10 +170,10 @@ Segment Segment::from_bytes(const std::uint8_t* src, std::size_t readable_size, 
         auto buf = std::make_shared<Buffer>();
         buf->ensure(buffer_bytes);
         memcpy(buf->data(), src, buffer_bytes);
-        return {seg_hdr, std::move(buf), std::make_shared<FieldCollection>(std::move(fields))};
+        return {std::move(seg_hdr), std::move(buf), std::make_shared<FieldCollection>(std::move(fields))};
     } else {
         BufferView bv{const_cast<uint8_t*>(src), buffer_bytes};
-        return {seg_hdr, std::move(bv), std::make_shared<FieldCollection>(std::move(fields))};
+        return {std::move(seg_hdr), std::move(bv), std::make_shared<FieldCollection>(std::move(fields))};
     }
 }
 
@@ -242,7 +242,7 @@ Segment Segment::from_buffer(std::shared_ptr<Buffer>&& buffer) {
 void Segment::write_header(uint8_t* dst, size_t hdr_size) const {
     FixedHeader hdr = {MAGIC_NUMBER, HEADER_VERSION_V1, std::uint32_t(hdr_size)};
     hdr.write(dst);
-    if(!header_->has_metadata_field())
+    if(!header_.has_metadata_field())
         ARCTICDB_DEBUG(log::codec(), "Expected metadata field");
 
 
@@ -251,7 +251,7 @@ void Segment::write_header(uint8_t* dst, size_t hdr_size) const {
 std::pair<uint8_t*, size_t> Segment::try_internal_write(std::shared_ptr<Buffer>& tmp, size_t hdr_size) {
     auto total_hdr_size = hdr_size + FIXED_HEADER_SIZE;
     if(std::holds_alternative<std::shared_ptr<Buffer>>(buffer_) && std::get<std::shared_ptr<Buffer>>(buffer_)->preamble_bytes() >= total_hdr_size) {
-        auto& buffer = std::get<std::shared_ptr<Buffer>>(buffer_);
+        const auto& buffer = std::get<std::shared_ptr<Buffer>>(buffer_);
         auto base_ptr = buffer->preamble() + (buffer->preamble_bytes() - total_hdr_size);
         util::check(base_ptr + total_hdr_size == buffer->data(), "Expected base ptr to align with data ptr, {} != {}", fmt::ptr(base_ptr + total_hdr_size), fmt::ptr(buffer->data()));
         ARCTICDB_TRACE(log::codec(), "Buffer contents before header write: {}", dump_bytes(buffer->data(), buffer->bytes(), 100u));

@@ -11,69 +11,85 @@
 #include <folly/gen/Base.h>
 
 namespace arcticdb::entity {
+struct StreamDescriptorData {
+    SortedValue sorted_;
+    uint64_t compressed_bytes_;
+    uint64_t uncompressed_bytes_;
+    StreamId stream_id_;
+    IndexDescriptor index_;
+
+    StreamDescriptorData() = default;
+
+    ARCTICDB_MOVE_COPY_DEFAULT(StreamDescriptorData)
+
+    StreamDescriptorData clone() {
+        return *this;
+    }
+};
+
+bool operator==(const StreamDescriptorData& left, const StreamDescriptorData& right) {
+    return left.stream_id_ == right.stream_id_ && left.index_ == right.index_;
+}
+
+bool operator!=(const StreamDescriptorData& left, const StreamDescriptorData& right) {
+    return !(left == right);
+}
 
 struct StreamDescriptor {
-    using Proto = arcticdb::proto::descriptors::StreamDescriptor;
-
-    std::shared_ptr<Proto> data_ = std::make_shared<Proto>();
+    std::shared_ptr<StreamDescriptorData> data_ = std::make_shared<StreamDescriptorData>();
     std::shared_ptr<FieldCollection> fields_ = std::make_shared<FieldCollection>();
-    ;
 
     StreamDescriptor() = default;
     ~StreamDescriptor() = default;
 
-    [[nodiscard]] Proto copy_to_proto() const {
-        Proto proto;
-        proto.CopyFrom(*data_);
-        proto.mutable_fields()->Clear();
-        for(const auto& field : *fields_) {
-            auto new_field = proto.mutable_fields()->Add();
-            new_field->set_name(std::string(field.name()));
-            new_field->mutable_type_desc()->set_dimension(static_cast<uint32_t>(field.type().dimension()));
-            set_data_type(field.type().data_type(), *new_field->mutable_type_desc());
-        }
-        return proto;
+    StreamDescriptor(std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
+            data_(std::move(data)),
+            fields_(std::move(fields)) {
+
     }
 
     void set_id(const StreamId& id) {
-        util::variant_match(id,
-                            [that=this] (const StringId& str) { that->data_->set_str_id(str); },
-                            [that=this] (const NumericId& n) { that->data_->set_num_id(n); });
-    }
-
-    static StreamId id_from_proto(const Proto& proto) {
-        if(proto.id_case() == arcticdb::proto::descriptors::StreamDescriptor::kNumId)
-            return NumericId(proto.num_id());
-        else
-            return proto.str_id();
+        data_->stream_id_ = id;
     }
 
     [[nodiscard]] StreamId id() const {
-        return id_from_proto(*data_);
+        return data_->stream_id_;
+    }
+
+    [[nodiscard]] uint64_t uncompressed_bytes() const {
+        return data_->uncompressed_bytes_;
+    }
+
+    [[nodiscard]] uint64_t compressed_bytes() const {
+        return data_->compressed_bytes_;
+    }
+
+    [[nodiscard]] SortedValue sorted() const {
+        return data_->sorted_;
     }
 
     [[nodiscard]] IndexDescriptor index() const {
-        return IndexDescriptor(data_->index());
+        return data_->index_;
     }
 
     void set_sorted(SortedValue sorted) {
-        data_->set_sorted(sorted_value_to_proto(sorted));
+       data_->sorted_ = sorted;
     }
 
     SortedValue get_sorted() {
-        return sorted_value_from_proto(data_->sorted());
+        return data_->sorted_;
     }
 
     void set_index(const IndexDescriptor& idx) {
-        data_->mutable_index()->CopyFrom(idx.data_);
+        data_->index_ = idx;
     }
 
     void set_index_type(const IndexDescriptor::Type type) {
-        data_->mutable_index()->set_kind(type);
+        data_->index_.set_type(type);
     }
 
     void set_index_field_count(size_t size) {
-        data_->mutable_index()->set_field_count(size);
+        data_->index_.set_field_count(size);
     }
 
     explicit StreamDescriptor(const StreamId& id) {
@@ -91,21 +107,9 @@ struct StreamDescriptor {
         fields_ = std::move(fields);
     }
 
-    StreamDescriptor(std::shared_ptr<arcticdb::proto::descriptors::StreamDescriptor> data, std::shared_ptr<FieldCollection> fields) :
-        data_(std::move(data)),
-        fields_(std::move(fields)) {
-        util::check(static_cast<bool>(data_), "Creating stream descriptor with null protobuf pointer");
-        util::check(static_cast<bool>(fields_), "Creating stream descriptor with null fields pointer");
-    }
-
-
     StreamDescriptor(const StreamId& id, const IndexDescriptor &idx) {
         set_id(id);
         set_index(idx);
-    }
-
-    StreamDescriptor(std::shared_ptr<arcticdb::proto::descriptors::StreamDescriptor> data) :
-        data_(std::move(data)) {
     }
 
     StreamDescriptor(const StreamDescriptor& other) = default;
@@ -132,9 +136,7 @@ struct StreamDescriptor {
     }
 
     [[nodiscard]] StreamDescriptor clone() const {
-        Proto proto;
-        proto.CopyFrom(*data_);
-        return StreamDescriptor{std::make_shared<Proto>(std::move(proto)), std::make_shared<FieldCollection>(fields_->clone())};
+        return StreamDescriptor{std::make_shared<StreamDescriptorData>(data_->clone()), std::make_shared<FieldCollection>(fields_->clone())};
     };
 
     [[nodiscard]] const FieldCollection& fields() const {
@@ -206,7 +208,7 @@ struct StreamDescriptor {
 
     friend bool operator==(const StreamDescriptor& left, const StreamDescriptor& right) {
         google::protobuf::util::MessageDifferencer diff;
-        if(!diff.Compare(*left.data_, *right.data_))
+        if(*left.data_ != *right.data_)
             return false;
 
         return *left.fields_ == *right.fields_;
@@ -233,17 +235,6 @@ struct StreamDescriptor {
         return fields_->at(pos);
     }
 
-    [[nodiscard]] const Proto& proto() const {
-        return *data_;
-    }
-
-    Proto& mutable_proto() {
-        return *data_;
-    }
-
-    void print_proto_debug_str() const {
-        data_->PrintDebugString();
-    }
 };
 
 template <class IndexType>
@@ -256,15 +247,15 @@ inline void set_index(arcticdb::proto::descriptors::StreamDescriptor &stream_des
 
 template <typename IndexType, typename RangeType>
 StreamDescriptor index_descriptor(const StreamId& stream_id, IndexType, const RangeType& fields) {
-    arcticdb::proto::descriptors::StreamDescriptor desc;
-    set_id(desc, stream_id);
-    set_index<IndexType>(desc);
+    StreamDescriptor desc;
+    desc.set_id(stream_id);
+    desc.set_index<IndexType>();
     auto out_fields = std::make_shared<FieldCollection>();
     for(const auto& field : fields) {
         out_fields->add({field.type(), field.name()});
     }
 
-    return StreamDescriptor(std::make_shared<StreamDescriptor::Proto>(std::move(desc)), std::move(out_fields));
+    return desc;
 }
 
 template <typename IndexType>
@@ -334,12 +325,12 @@ struct formatter<arcticdb::entity::StreamDescriptor> {
 };
 
 template<>
-struct formatter<arcticdb::entity::StreamDescriptor::Proto> {
+struct formatter<arcticdb::proto::descriptors::StreamDescriptor> {
     template<typename ParseContext>
     constexpr auto parse(ParseContext &ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
-    auto format(const arcticdb::entity::StreamDescriptor::Proto &sd, FormatContext &ctx) const {
+    auto format(const arcticdb::proto::descriptors::StreamDescriptor &sd, FormatContext &ctx) const {
         return format_to(ctx.out(), "{}", sd.DebugString());
     }
 };

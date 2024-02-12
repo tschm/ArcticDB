@@ -15,10 +15,9 @@
 #include <arcticdb/codec/lz4.hpp>
 #include <arcticdb/codec/encoded_field.hpp>
 #include <arcticdb/codec/magic_words.hpp>
-
 #include <arcticdb/util/bitset.hpp>
-
 #include <arcticdb/util/buffer.hpp>
+#include <arcticdb/util/sparse_utils.hpp>
 
 #include <google/protobuf/text_format.h>
 

@@ -16,6 +16,11 @@ size_t calc_encoded_field_buffer_size(const arcticdb::proto::encoding::EncodedFi
     return bytes;
 }
 
+template <typename Input, typename Output>
+void set_codec(Input& in, Output& out) {
+    out.MergeFrom(in);
+}
+
 void block_from_proto(const arcticdb::proto::encoding::Block& input, EncodedBlock& output, bool is_shape) {
     output.set_in_bytes(input.in_bytes());
     output.set_out_bytes(input.out_bytes());
@@ -24,23 +29,34 @@ void block_from_proto(const arcticdb::proto::encoding::Block& input, EncodedBloc
     output.is_shape_ = is_shape;
     switch (input.codec().codec_case()) {
         case arcticdb::proto::encoding::VariantCodec::kZstd: {
-            const auto &zstd_in = input.codec().zstd();
-            auto *zstd_out = output.mutable_codec()->mutable_zstd();
+            set_codec(input.codec().zstd(), *output.mutable_codec()->mutable_zstd());
             break;
         }
         case arcticdb::proto::encoding::VariantCodec::kLz4: {
-            const auto &lz4_in = input.codec().zstd();
-            auto *lz4_out = output.mutable_codec()->mutable_lz4();
+            set_codec(input.codec().lz4(), *output.mutable_codec()->mutable_lz4());
             break;
         }
         case arcticdb::proto::encoding::VariantCodec::kPassthrough : {
-            const auto &passthrough_in = input.codec().passthrough();
-            auto *passthrough_out = output.mutable_codec()->mutable_passthrough();
+            set_codec(input.codec().lz4(), *output.mutable_codec()->mutable_lz4());
             break;
         }
         default:
             util::raise_rte("Unrecognized_codec");
     }
+}
+
+void set_lz4(const Lz4Codec& lz4_in, arcticdb::proto::encoding::VariantCodec::Lz4& lz4_out) {
+    lz4_out.set_acceleration(lz4_in.acceleration_);
+}
+
+
+void set_zstd(const ZstdCodec& zstd_in, arcticdb::proto::encoding::VariantCodec::Zstd& zstd_out) {
+    zstd_out.set_is_streaming(zstd_in.is_streaming_);
+    zstd_out.set_level(zstd_in.level_);
+}
+
+void set_passthrough(const PassthroughCodec& passthrough_in, arcticdb::proto::encoding::VariantCodec::Passthrough& passthrough_out) {
+    passthrough_out.set_mark(passthrough_in.unused_);
 }
 
 void proto_from_block(const EncodedBlock& input, arcticdb::proto::encoding::Block& output) {
@@ -51,18 +67,15 @@ void proto_from_block(const EncodedBlock& input, arcticdb::proto::encoding::Bloc
 
     switch (input.codec().codec_case()) {
     case arcticdb::proto::encoding::VariantCodec::kZstd: {
-        const auto &zstd_in = input.codec().zstd();
-        auto *zstd_out = output.mutable_codec()->mutable_zstd();
+        set_zstd(input.codec().zstd(), *output.mutable_codec()->mutable_zstd());
         break;
     }
     case arcticdb::proto::encoding::VariantCodec::kLz4: {
-        const auto &lz4_in = input.codec().zstd();
-        auto *lz4_out = output.mutable_codec()->mutable_lz4();
+        set_lz4(input.codec().lz4(), *output.mutable_codec()->mutable_lz4());
         break;
     }
     case arcticdb::proto::encoding::VariantCodec::kPassthrough: {
-        const auto &passthrough_in = input.codec().passthrough();
-        auto *passthrough_out = output.mutable_codec()->mutable_passthrough();
+        set_passthrough(input.codec().passthrough(), *output.mutable_codec()->mutable_passthrough());
         break;
     }
     default:
@@ -88,7 +101,7 @@ void encoded_field_from_proto(const arcticdb::proto::encoding::EncodedField& inp
     }
 }
 
-void proto_from_encoded_field(EncodedField& input, arcticdb::proto::encoding::EncodedField& output) {
+void proto_from_encoded_field(const EncodedField& input, arcticdb::proto::encoding::EncodedField& output) {
     util::check(input.has_ndarray(), "Only ndarray fields supported for v1 encoding");
     const auto& input_ndarray = input.ndarray();
     auto* output_ndarray = output.mutable_ndarray();

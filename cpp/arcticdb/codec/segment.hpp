@@ -15,6 +15,7 @@
 #include <google/protobuf/arena.h>
 #include <util/buffer_pool.hpp>
 #include <arcticdb/entity/field_collection.hpp>
+#include <arcticdb/codec/encoding_version.hpp>
 
 #include <iostream>
 #include <variant>
@@ -38,12 +39,12 @@ static constexpr uint16_t HEADER_VERSION_V2 = 2;
 
 inline EncodingVersion encoding_version(const storage::LibraryDescriptor::VariantStoreConfig& cfg) {
     return util::variant_match(cfg,
-                               [](const arcticdb::proto::storage::VersionStoreConfig &version_config) {
-                                   return EncodingVersion(version_config.encoding_version());
-                               },
-                               [](std::monostate) {
-                                   return EncodingVersion::V1;
-                               }
+       [](const arcticdb::proto::storage::VersionStoreConfig &version_config) {
+           return EncodingVersion(version_config.encoding_version());
+       },
+       [](std::monostate) {
+           return EncodingVersion::V1;
+       }
     );
 }
 
@@ -57,47 +58,16 @@ class Segment {
   public:
     Segment() = default;
 
-    Segment(SegmentHeader header, std::shared_ptr<Buffer> buffer, std::shared_ptr<FieldCollection> fields) :
-        header_(header),
+    Segment(SegmentHeader&& header, std::shared_ptr<Buffer> buffer, std::shared_ptr<FieldCollection> fields) :
+        header_(std::move(header)),
         buffer_(std::move(buffer)),
         fields_(std::move(fields)){
     }
 
-    Segment(SegmentHeader header, BufferView &&buffer, std::shared_ptr<FieldCollection> fields) :
-        header_(header),
-        buffer_(buffer),
-        fields_(std::move(fields)){}
-
-    // for rvo only, go to solution should be to move
-    Segment(const Segment &that) :
-            header_(that.header_),
-            keepalive_(that.keepalive_) {
-        auto b = std::make_shared<Buffer>();
-        util::variant_match(that.buffer_,
-            [] (const std::monostate&) {/* Uninitialized buffer */},
-            [&b](const BufferView& buf) { buf.copy_to(*b); },
-            [&b](const std::shared_ptr<Buffer>& buf) { buf->copy_to(*b); }
-            );
-        buffer_ = std::move(b);
-        if(that.fields_)
-            fields_ = std::make_shared<FieldCollection>(that.fields_->clone());
-    }
-
-    Segment &operator=(const Segment &that) {
-        if(this == &that)
-            return *this;
-
-        header_ = that.header_;
-        auto b = std::make_shared<Buffer>();
-        util::variant_match(that.buffer_,
-                            [] (const std::monostate&) {/* Uninitialized buffer */},
-                            [&b](const BufferView& buf) { buf.copy_to(*b); },
-                            [&b](const std::shared_ptr<Buffer>& buf) { buf->copy_to(*b); }
-                            );
-        buffer_ = std::move(b);
-        fields_ = that.fields_;
-        keepalive_ = that.keepalive_;
-        return *this;
+    Segment(SegmentHeader&& header, BufferView &&buffer, std::shared_ptr<FieldCollection> fields) :
+        header_(std::move(header)),
+        buffer_(std::move(buffer)),
+        fields_(std::move(fields)) {
     }
 
     Segment(Segment &&that) noexcept {
@@ -191,6 +161,10 @@ class Segment {
 
     [[nodiscard]] size_t fields_size() const {
         return fields_->size();
+    }
+
+    [[nodiscard]] const Field& fields(size_t pos) const {
+        return fields_->at(pos);
     }
 
     // For external language tools, not efficient

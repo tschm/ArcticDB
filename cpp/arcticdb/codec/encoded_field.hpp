@@ -7,21 +7,23 @@
 
 #pragma once
 
+#include <utility>
+#include <arcticdb/util/preconditions.hpp>
+#include <arcticdb/entity/protobufs.hpp>
+
+#include <boost/iterator/iterator_facade.hpp>
+
 #pragma pack(push)
 #pragma pack(1)
 
 namespace arcticdb {
 
-inline std::pair<const uint8_t *, const uint8_t *> get_segment_begin_end(const Segment &segment,
-                                                                         const arcticdb::proto::encoding::SegmentHeader &hdr) {
-    const uint8_t *data = segment.buffer().data();
-    util::check(data != nullptr, "Got null data ptr from segment");
-    const uint8_t *begin = data;
+class Segment;
+class SegmentHeader;
 
-    const auto fields_offset = hdr.column_fields().offset();
-    const auto end = begin + fields_offset;
-    return {begin, end};
-}
+std::pair<const uint8_t*, const uint8_t*> get_segment_begin_end(
+    const Segment &segment,
+    const SegmentHeader& hdr);
 
 constexpr size_t encoding_size = 6;
 enum class Codec : uint16_t {
@@ -37,11 +39,11 @@ struct ZstdCodec {
 
     void MergeFrom(const arcticdb::proto::encoding::VariantCodec::Zstd &zstd) {
         level_ = zstd.level();
-        is_streaming = zstd.is_streaming();
+        is_streaming_ = zstd.is_streaming();
     }
 
     int32_t level_ = 0;
-    bool is_streaming = false;
+    bool is_streaming_ = false;
     uint8_t padding_ = 0;
 };
 
@@ -105,6 +107,10 @@ struct BlockCodec {
         return &data_[0];
     }
 
+    const uint8_t* data() const {
+        return &data_[0];
+    }
+
     BlockCodec() {
         memset(data(), 0, DataSize);
     }
@@ -135,22 +141,22 @@ struct BlockCodec {
 
     const ZstdCodec& zstd() const {
         util::check(codec_ == Codec::Zstd, "Not a zstd codec");
-        return *reinterpret_cast<ZstdCodec*>(data());
+        return *reinterpret_cast<const ZstdCodec*>(data());
     }
 
-    const Lz4Codec& *mutable_lz4() const {
+    const Lz4Codec& lz4() const {
         util::check(codec_ == Codec::Lz4, "Not an lz4 codec");
-        return *reinterpret_cast<Lz4Codec*>(data());
+        return *reinterpret_cast<const Lz4Codec*>(data());
     }
 
-    const TurboPFORCodec& turbopfor() const {
-        util::check(codec_ == Codec::Tp4, "Not a turbopfor codec");
-        return *reinterpret_cast<Tp4Codec*>(data());
+    const TurboPforCodec& turbopfor() const {
+        util::check(codec_ == Codec::TurboPfor, "Not a turbopfor codec");
+        return *reinterpret_cast<const TurboPforCodec*>(data());
     }
 
     const PassthroughCodec& passthrough() const {
         util::check(codec_ == Codec::Passthrough, "Not a passthrough codec");
-        return *reinterpret_cast<PassthroughCodec*>(data());
+        return *reinterpret_cast<const PassthroughCodec*>(data());
     }
 
     arcticdb::proto::encoding::VariantCodec::CodecCase codec_case() const {
@@ -272,6 +278,7 @@ struct EncodedField {
             field_(field),
             is_shapes_(is_shapes) {
         }
+
 
         template<class ValueType>
         class EncodedBlockCollectionIterator : public boost::iterator_facade<EncodedBlockCollectionIterator<ValueType>,
