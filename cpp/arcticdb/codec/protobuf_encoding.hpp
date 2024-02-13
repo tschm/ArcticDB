@@ -119,4 +119,29 @@ void proto_from_encoded_field(const EncodedField& input, arcticdb::proto::encodi
     }
 }
 
+size_t calc_proto_encoded_blocks_size(const arcticdb::proto::encoding::SegmentHeader& hdr) {
+    size_t bytes{};
+    for(const auto& field : hdr.fields()) {
+        bytes += EncodedField::Size;
+        if(field.has_ndarray()) {
+            const auto& ndarray = field.ndarray();
+            const auto shapes_size = sizeof(EncodedBlock) * ndarray.shapes_size();
+            const auto values_size = sizeof(EncodedBlock) * ndarray.values_size();
+            bytes += shapes_size + values_size;
+        }
+    }
+    return bytes;
+}
+
+EncodedFieldCollection encoded_fields_from_proto(const arcticdb::proto::encoding::SegmentHeader& hdr) {
+    const auto encoded_buffer_size = calc_proto_encoded_blocks_size(hdr);
+    Buffer buffer(encoded_buffer_size);
+    auto pos = 0U;
+    for(const auto& in_field : hdr.fields()) {
+       auto* out_field = reinterpret_cast<EncodedField*>(buffer.data() + pos);
+        encoded_field_from_proto(in_field, *out_field);
+    }
+    return EncodedFieldCollection{std::move(buffer)};
+}
+
 } //namespace arcticdb

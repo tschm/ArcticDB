@@ -33,13 +33,14 @@ constexpr static std::size_t FIXED_HEADER_SIZE = sizeof(FixedHeader);
 class SegmentHeader {
     struct HeaderData { ;
         EncodingVersion encoding_version_ = EncodingVersion::V1;
-        std::array<bool, 5> optional_fields_ = {UNSET, UNSET,UNSET, UNSET, UNSET};
+        std::array<bool, 5> optional_header_fields_ = {UNSET, UNSET,UNSET, UNSET, UNSET};
         bool compacted_ = false;
         uint64_t footer_offset_ = 0;
     };
 
     HeaderData data_;
-    EncodedFieldCollection fields_;
+    EncodedFieldCollection header_fields_;
+    EncodedFieldCollection body_fields_;
     std::array<uint32_t, 5> offset_ = {};
 
     enum class FieldOffset : uint8_t {
@@ -70,7 +71,7 @@ public:
     SegmentHeader() = default;
 
     [[nodiscard]] bool empty() const {
-        return fields_.empty();
+        return header_fields_.empty();
     }
 
     [[nodiscard]] bool compacted() const {
@@ -82,7 +83,7 @@ public:
     }
 
     [[nodiscard]] size_t bytes() const {
-        return sizeof(HeaderData) + fields_.bytes();
+        return sizeof(HeaderData) + header_fields_.bytes();
     }
 
     [[nodiscard]] static constexpr size_t as_offset(FieldOffset field_offset) {
@@ -90,7 +91,7 @@ public:
     }
 
     [[nodiscard]] int32_t get_offset(FieldOffset field_offset) const {
-        return data_.optional_fields_[as_offset(field_offset)];
+        return data_.optional_header_fields_[as_offset(field_offset)];
     }
 
     [[nodiscard]] constexpr std::string_view offset_name(FieldOffset field_offset) const {
@@ -124,7 +125,7 @@ public:
     template <FieldOffset field_offset>
     [[nodiscard]] const EncodedField& get_field() const {
         util::check(has_field(field_offset), "Field {} has not been set", offset_name(field_offset));
-        return fields_.at(offset_[as_offset(field_offset)]);
+        return header_fields_.at(offset_[as_offset(field_offset)]);
     }
 
     [[nodiscard]] const EncodedField& metadata_field() const {
@@ -183,7 +184,7 @@ public:
     void serialize_to_bytes(uint8_t* dst) const {
         memcpy(dst, &data_, sizeof(HeaderData));
         dst += sizeof(HeaderData);
-        memcpy(dst, fields_.data(), fields_.bytes());
+        memcpy(dst, header_fields_.data(), header_fields_.bytes());
     }
 
     void deserialize_proto_field(
@@ -191,7 +192,7 @@ public:
             CursoredBuffer<Buffer>& buffer,
             const arcticdb::proto::encoding::EncodedField& field,
             size_t& pos) {
-        data_.optional_fields_[as_offset(field_offset)] = true;
+        data_.optional_header_fields_[as_offset(field_offset)] = true;
         offset_[as_offset(field_offset)] = pos++;
         const auto field_size = calc_encoded_field_buffer_size(field);
         buffer.ensure<uint8_t>(field_size);
@@ -227,14 +228,19 @@ public:
        header_size -= sizeof(HeaderData);
        Buffer buffer(header_size);
        memcpy(buffer.data(), data, header_size);
-       fields_ = EncodedFieldCollection{std::move(buffer)};
+       header_fields_ = EncodedFieldCollection{std::move(buffer)};
 
        auto pos = 0U;
-       for(auto has_field : folly::enumerate(data_.optional_fields_)) {
+       for(auto has_field : folly::enumerate(data_.optional_header_fields_)) {
            if(*has_field) {
                offset_[has_field.index] = pos++;
            }
        }
+
+    }
+
+    void set_body_fields(EncodedFieldCollection&& body_fields) {
+        body_fields_ = std::move(body_fields);
     }
 };
 

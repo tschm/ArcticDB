@@ -49,6 +49,7 @@ inline AtomKey decode_key(const arcticdb::proto::descriptors::AtomKey& input) {
          .end_index(index_end)
          .build(stream_id, KeyType(input.key_type()));
 }
+
 [[nodiscard]] arcticdb::proto::descriptors::StreamDescriptor copy_stream_descriptor_to_proto(const StreamDescriptor& desc) {
     using Proto = arcticdb::proto::descriptors::StreamDescriptor;
 

@@ -70,12 +70,18 @@ class Segment {
         fields_(std::move(fields)) {
     }
 
+    Segment(SegmentHeader&& header, VariantBuffer &&buffer, std::shared_ptr<FieldCollection> fields) :
+        header_(std::move(header)),
+        buffer_(std::move(buffer)),
+        fields_(std::move(fields)) {
+    }
+
     Segment(Segment &&that) noexcept {
         using std::swap;
         swap(header_, that.header_);
         swap(fields_, that.fields_);
         swap(keepalive_, that.keepalive_);
-        move_buffer(std::move(that));
+        buffer_.move_buffer(std::move(that.buffer_));
     }
 
     Segment &operator=(Segment &&that) noexcept {
@@ -83,13 +89,13 @@ class Segment {
         swap(header_, that.header_);
         swap(fields_, that.fields_);
         swap(keepalive_, that.keepalive_);
-        move_buffer(std::move(that));
+        buffer_.move_buffer(std::move(that.buffer_));
         return *this;
     }
 
     ~Segment() = default;
 
-    static Segment from_buffer(std::shared_ptr<Buffer>&& buf);
+    static Segment from_buffer(const std::shared_ptr<Buffer>& buf);
 
     void set_buffer(VariantBuffer&& buffer) {
         buffer_ = std::move(buffer);
@@ -118,13 +124,7 @@ class Segment {
     }
 
     [[nodiscard]] std::size_t buffer_bytes() const {
-        std::size_t s = 0;
-         util::variant_match(buffer_,
-           [] (const std::monostate&) { /* Uninitialized buffer */},
-           [&s](const BufferView& b) { s = b.bytes(); },
-           [&s](const std::shared_ptr<Buffer>& b) { s = b->bytes(); });
-
-        return s;
+        return buffer_.bytes();
     }
 
     SegmentHeader &header() {
@@ -136,23 +136,11 @@ class Segment {
     }
 
     [[nodiscard]] BufferView buffer() const {
-        if (std::holds_alternative<std::shared_ptr<Buffer>>(buffer_)) {
-            return std::get<std::shared_ptr<Buffer>>(buffer_)->view();
-        } else {
-            return std::get<BufferView>(buffer_);
-        }
-    }
-
-    [[nodiscard]] bool is_uninitialized() const {
-        return std::holds_alternative<std::monostate>(buffer_);
+        return buffer_.view();
     }
 
     [[nodiscard]] bool is_empty() const {
-        return is_uninitialized() || (buffer().bytes() == 0 && header_.empty());
-    }
-
-    [[nodiscard]] bool is_owning_buffer() const {
-        return std::holds_alternative<std::shared_ptr<Buffer>>(buffer_);
+        return buffer_.is_uninitialized() || (buffer().bytes() == 0 && header_.empty());
     }
 
     [[nodiscard]] std::shared_ptr<FieldCollection> fields_ptr() const {
@@ -176,15 +164,6 @@ class Segment {
         return fields;
     }
 
-    void force_own_buffer() {
-        if (!is_owning_buffer()) {
-            auto b = std::make_shared<Buffer>();
-            std::get<BufferView>(buffer_).copy_to(*b);
-            buffer_ = std::move(b);
-        }
-        keepalive_.reset();
-    }
-
     void set_keepalive(std::any&& keepalive) {
         keepalive_ = std::move(keepalive);
     }
@@ -194,25 +173,6 @@ class Segment {
     }
 
   private:
-    void move_buffer(Segment &&that) {
-        if(is_uninitialized() || that.is_uninitialized()) {
-            std::swap(buffer_, that.buffer_);
-        } else if (!(is_owning_buffer() ^ that.is_owning_buffer())) {
-            if (is_owning_buffer()) {
-                swap(*std::get<std::shared_ptr<Buffer>>(buffer_), *std::get<std::shared_ptr<Buffer>>(that.buffer_));
-            } else {
-                swap(std::get<BufferView>(buffer_), std::get<BufferView>(that.buffer_));
-            }
-        } else if (is_owning_buffer()) {
-            log::storage().info("Copying segment");
-            // data of segment being moved is not owned, moving it is dangerous, copying instead
-            that.buffer().copy_to(*std::get<std::shared_ptr<Buffer>>(buffer_));
-        } else {
-            // data of this segment is a view, but the move data is moved
-            buffer_ = std::move(std::get<std::shared_ptr<Buffer>>(that.buffer_));
-        }
-    }
-
     SegmentHeader header_;
     VariantBuffer buffer_;
     std::shared_ptr<FieldCollection> fields_;

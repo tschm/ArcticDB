@@ -273,6 +273,7 @@ std::pair<std::optional<google::protobuf::Any>, StreamDescriptor> decode_metadat
         util::check_magic<DescriptorMagic>(data);
 
     auto maybe_fields = decode_descriptor_fields(hdr, data, begin, end);
+    //TODO these are already decoded on the segment?
     if(!maybe_fields) {
         auto old_fields = std::make_shared<FieldCollection>(fields_from_proto(hdr.stream_descriptor()));
         return std::make_pair(std::move(maybe_any),StreamDescriptor{std::make_shared<StreamDescriptor::Proto>(std::move(*hdr.mutable_stream_descriptor())), old_fields});
@@ -317,8 +318,7 @@ void decode_v2(const Segment& segment,
         data += encoding_sizes::field_compressed_size(hdr.descriptor_field());
 
     util::check_magic<IndexMagic>(data);
-    auto index_fields = decode_index_fields(hdr, data, begin, end);
-    if(index_fields)
+    if(auto index_fields = decode_index_fields(hdr, data, begin, end); index_fields)
         res.set_index_fields(std::make_shared<FieldCollection>(std::move(*index_fields)));
 
     util::check(hdr.has_column_fields(), "Expected column fields in v2 encoding");
@@ -358,7 +358,7 @@ void decode_v2(const Segment& segment,
 void decode_v1(const Segment& segment,
             const SegmentHeader& hdr,
             SegmentInMemory& res,
-            StreamDescriptor::Proto& desc)
+            StreamDescriptor& desc)
 {
     ARCTICDB_SAMPLE(DecodeSegment, 0)
     const uint8_t* data = segment.buffer().data();
@@ -372,11 +372,11 @@ void decode_v1(const Segment& segment,
         util::check(fields_size == segment.fields_size(), "Mismatch between descriptor and header field size: {} != {}", fields_size, hdr.fields_size());
         const auto start_row = res.row_count();
 
-        const auto seg_row_count = fields_size ? ssize_t(segment.fields(0).ndarray().items_count()) : 0LL;
+        const auto seg_row_count = fields_size ? ssize_t(hdr.fields(0).ndarray().items_count()) : 0LL;
         res.init_column_map();
 
         for (std::size_t i = 0; i < static_cast<size_t>(fields_size); ++i) {
-            const auto& field = segment.fields(static_cast<int>(i));
+            const auto& field = hdr.fields(static_cast<int>(i));
             const auto& field_name = desc.fields(static_cast<int>(i)).name();
             util::check(data!=end, "Reached end of input block with {} fields to decode", fields_size-i);
             if(auto col_index = res.column_index(field_name)) {
