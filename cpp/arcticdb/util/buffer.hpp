@@ -273,6 +273,7 @@ public:
     template<typename BufferType>
     VariantBuffer& operator=(BufferType&& buf) {
         buffer_ = std::forward<decltype(buf)>(buf);
+        return *this;
     }
 
     [[nodiscard]] bool is_owning() const {
@@ -311,9 +312,9 @@ public:
     [[nodiscard]] std::size_t bytes() const {
         std::size_t s = 0;
         util::variant_match(buffer_,
-                            [] (const std::monostate&) { /* Uninitialized buffer */},
-                            [&s](const BufferView& b) { s = b.bytes(); },
-                            [&s](const std::shared_ptr<Buffer>& b) { s = b->bytes(); });
+            [] (const std::monostate&) { /* Uninitialized buffer */},
+            [&s](const BufferView& b) { s = b.bytes(); },
+            [&s](const std::shared_ptr<Buffer>& b) { s = b->bytes(); });
 
         return s;
     }
@@ -351,7 +352,6 @@ public:
             std::get<BufferView>(buffer_).copy_to(*b);
             buffer_ = std::move(b);
         }
-        keepalive_.reset();
     }
 };
 

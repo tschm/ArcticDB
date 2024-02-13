@@ -15,6 +15,7 @@
 
 namespace arcticdb {
 namespace segment_size {
+
 std::tuple<size_t, size_t> compressed(const arcticdb::proto::encoding::SegmentHeader &seg_hdr) {
     std::size_t buffer_size = 0;
 
@@ -129,8 +130,7 @@ std::tuple<SegmentHeader, FieldCollection, std::optional<SegmentHeaderProtoWrapp
 
     const auto* header_ptr = src + FIXED_HEADER_SIZE;
     const auto* fields_ptr = header_ptr + fixed_hdr->header_bytes;
-    const auto header_version = fixed_hdr->encoding_version;
-    if(header_version == HEADER_VERSION_V1) {
+    if(const auto header_version = fixed_hdr->encoding_version; header_version == HEADER_VERSION_V1) {
        proto_wrapper = decode_protobuf_header(header_ptr, fixed_hdr->header_bytes);
        segment_header.deserialize_from_proto(proto_wrapper->proto());
        util::check(segment_header.encoding_version() == EncodingVersion::V1, "Expected v1 header to contain legacy encoding version");

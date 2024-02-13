@@ -624,31 +624,27 @@ struct IndexDescriptor {
     Type type_;
 
     IndexDescriptor() = default;
-    IndexDescriptor(size_t field_count, Type type) :
+    IndexDescriptor(uint32_t field_count, Type type) :
         field_count_(field_count),
         type_(type) {
     }
 
-    Proto to_proto() { //TODO move elsewhere
+    [[nodiscard]] Proto to_proto() { //TODO move elsewhere
         Proto proto;
-
         proto.set_kind(type_);
         proto.set_field_count(field_count_);
+        return proto;
     }
 
-    bool uninitialized() const {
+    [[nodiscard]] bool uninitialized() const {
         return field_count() == 0 && type_ == Type::IndexDescriptor_Type_UNKNOWN;
     }
-
-   /* const Proto& proto() const  {
-        return data_;
-    } */
 
     uint32_t field_count() const {
         return field_count_;
     }
 
-    Type type() const {
+    [[nodiscard]] Type type() const {
         return type_;
     }
 

@@ -12,17 +12,17 @@
 
 namespace arcticdb::entity {
 struct StreamDescriptorData {
-    SortedValue sorted_;
-    uint64_t compressed_bytes_;
-    uint64_t uncompressed_bytes_;
+    SortedValue sorted_ = SortedValue::UNKNOWN;
+    uint64_t compressed_bytes_ = 0UL;
+    uint64_t uncompressed_bytes_ = 0UL;
     StreamId stream_id_;
-    IndexDescriptor index_;
+    IndexDescriptor index_ = IndexDescriptor{};
 
     StreamDescriptorData() = default;
 
     ARCTICDB_MOVE_COPY_DEFAULT(StreamDescriptorData)
 
-    StreamDescriptorData clone() {
+    [[nodiscard]] StreamDescriptorData clone() const {
         return *this;
     }
 };
@@ -46,6 +46,10 @@ struct StreamDescriptor {
             data_(std::move(data)),
             fields_(std::move(fields)) {
 
+    }
+
+    [[nodiscard]] const StreamDescriptorData& data() const  {
+        return *data_;
     }
 
     void set_id(const StreamId& id) {
@@ -249,7 +253,7 @@ template <typename IndexType, typename RangeType>
 StreamDescriptor index_descriptor(const StreamId& stream_id, IndexType, const RangeType& fields) {
     StreamDescriptor desc;
     desc.set_id(stream_id);
-    desc.set_index<IndexType>();
+    desc.set_index(IndexType{});
     auto out_fields = std::make_shared<FieldCollection>();
     for(const auto& field : fields) {
         out_fields->add({field.type(), field.name()});

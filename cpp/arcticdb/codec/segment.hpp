@@ -58,28 +58,28 @@ class Segment {
   public:
     Segment() = default;
 
-    Segment(SegmentHeader&& header, std::shared_ptr<Buffer> buffer, std::shared_ptr<FieldCollection> fields) :
+    Segment(SegmentHeader&& header, std::shared_ptr<Buffer> buffer, std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
         header_(std::move(header)),
         buffer_(std::move(buffer)),
-        fields_(std::move(fields)){
+        desc_(std::move(data), std::move(fields)){
     }
 
-    Segment(SegmentHeader&& header, BufferView &&buffer, std::shared_ptr<FieldCollection> fields) :
+    Segment(SegmentHeader&& header, BufferView &&buffer, std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
         header_(std::move(header)),
         buffer_(std::move(buffer)),
-        fields_(std::move(fields)) {
+        desc_(std::move(data), std::move(fields)) {
     }
 
-    Segment(SegmentHeader&& header, VariantBuffer &&buffer, std::shared_ptr<FieldCollection> fields) :
+    Segment(SegmentHeader&& header, VariantBuffer &&buffer, std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
         header_(std::move(header)),
         buffer_(std::move(buffer)),
-        fields_(std::move(fields)) {
+        desc_(std::move(data), std::move(fields)) {
     }
 
     Segment(Segment &&that) noexcept {
         using std::swap;
         swap(header_, that.header_);
-        swap(fields_, that.fields_);
+        swap(desc_, that.desc_);
         swap(keepalive_, that.keepalive_);
         buffer_.move_buffer(std::move(that.buffer_));
     }
@@ -87,7 +87,7 @@ class Segment {
     Segment &operator=(Segment &&that) noexcept {
         using std::swap;
         swap(header_, that.header_);
-        swap(fields_, that.fields_);
+        swap(desc_, that.desc_);
         swap(keepalive_, that.keepalive_);
         buffer_.move_buffer(std::move(that.buffer_));
         return *this;
@@ -144,21 +144,26 @@ class Segment {
     }
 
     [[nodiscard]] std::shared_ptr<FieldCollection> fields_ptr() const {
-        return fields_;
+        return desc_.fields_ptr();
     }
 
     [[nodiscard]] size_t fields_size() const {
-        return fields_->size();
+        return desc_.field_count();
     }
 
     [[nodiscard]] const Field& fields(size_t pos) const {
-        return fields_->at(pos);
+        return desc_.fields(pos);
+    }
+
+    void force_own_buffer() {
+        buffer_.force_own_buffer();
+        keepalive_.reset();
     }
 
     // For external language tools, not efficient
     [[nodiscard]] std::vector<std::string_view> fields_vector() const {
         std::vector<std::string_view> fields;
-        for(const auto& field : *fields_)
+        for(const auto& field : desc_.fields())
             fields.push_back(field.name());
 
         return fields;
@@ -175,7 +180,7 @@ class Segment {
   private:
     SegmentHeader header_;
     VariantBuffer buffer_;
-    std::shared_ptr<FieldCollection> fields_;
+    StreamDescriptor desc_;
     std::any keepalive_;
 };
 

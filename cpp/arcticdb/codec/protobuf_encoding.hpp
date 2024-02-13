@@ -3,11 +3,26 @@
 #include <arcticdb/entity/protobufs.hpp>
 #include <arcticdb/codec/encoded_field.hpp>
 #include <arcticdb/util/preconditions.hpp>
+#include <arcticdb/memory_layout.hpp>
 
 namespace arcticdb {
 
+
+void copy_from_proto(ZstdCodec& codec, const arcticdb::proto::encoding::VariantCodec::Zstd& zstd) {
+    codec.level_ = zstd.level();
+    codec.is_streaming_ = zstd.is_streaming();
+}
+
+void copy_from_proto(Lz4Codec& codec, const arcticdb::proto::encoding::VariantCodec::Lz4& lz4) {
+    codec.acceleration_ = lz4.acceleration();
+}
+
+void copy_from_proto(PassthroughCodec&, const arcticdb::proto::encoding::VariantCodec::Passthrough&) {
+    // No data in passthrough
+}
+
 size_t calc_encoded_field_buffer_size(const arcticdb::proto::encoding::EncodedField& field) {
-    size_t bytes = EncodedField::Size;
+    size_t bytes = EncodedFieldImpl::Size;
     util::check(field.has_ndarray(), "Only ndarray translations supported");
     const auto& ndarray = field.ndarray();
     util::check(ndarray.shapes_size() < 2, "Unexpected number of shapes in proto translation: {}", ndarray.shapes_size());
@@ -18,7 +33,7 @@ size_t calc_encoded_field_buffer_size(const arcticdb::proto::encoding::EncodedFi
 
 template <typename Input, typename Output>
 void set_codec(Input& in, Output& out) {
-    out.MergeFrom(in);
+    copy_from_proto(out, in);
 }
 
 void block_from_proto(const arcticdb::proto::encoding::Block& input, EncodedBlock& output, bool is_shape) {
@@ -83,7 +98,7 @@ void proto_from_block(const EncodedBlock& input, arcticdb::proto::encoding::Bloc
     }
 }
 
-void encoded_field_from_proto(const arcticdb::proto::encoding::EncodedField& input, EncodedField& output) {
+void encoded_field_from_proto(const arcticdb::proto::encoding::EncodedField& input, EncodedFieldImpl& output) {
     util::check(input.has_ndarray(), "Only ndarray fields supported for v1 encoding");
     const auto& input_ndarray = input.ndarray();
     auto* output_ndarray = output.mutable_ndarray();
@@ -101,7 +116,7 @@ void encoded_field_from_proto(const arcticdb::proto::encoding::EncodedField& inp
     }
 }
 
-void proto_from_encoded_field(const EncodedField& input, arcticdb::proto::encoding::EncodedField& output) {
+void proto_from_encoded_field(const EncodedFieldImpl& input, arcticdb::proto::encoding::EncodedField& output) {
     util::check(input.has_ndarray(), "Only ndarray fields supported for v1 encoding");
     const auto& input_ndarray = input.ndarray();
     auto* output_ndarray = output.mutable_ndarray();
@@ -122,7 +137,7 @@ void proto_from_encoded_field(const EncodedField& input, arcticdb::proto::encodi
 size_t calc_proto_encoded_blocks_size(const arcticdb::proto::encoding::SegmentHeader& hdr) {
     size_t bytes{};
     for(const auto& field : hdr.fields()) {
-        bytes += EncodedField::Size;
+        bytes += EncodedFieldImpl::Size;
         if(field.has_ndarray()) {
             const auto& ndarray = field.ndarray();
             const auto shapes_size = sizeof(EncodedBlock) * ndarray.shapes_size();
@@ -138,7 +153,7 @@ EncodedFieldCollection encoded_fields_from_proto(const arcticdb::proto::encoding
     Buffer buffer(encoded_buffer_size);
     auto pos = 0U;
     for(const auto& in_field : hdr.fields()) {
-       auto* out_field = reinterpret_cast<EncodedField*>(buffer.data() + pos);
+       auto* out_field = reinterpret_cast<EncodedFieldImpl*>(buffer.data() + pos);
         encoded_field_from_proto(in_field, *out_field);
     }
     return EncodedFieldCollection{std::move(buffer)};

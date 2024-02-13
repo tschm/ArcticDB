@@ -488,7 +488,7 @@ void add_bitmagic_compressed_size(
 
 void encode_sparse_map(
     ColumnData& column_data,
-    std::variant<EncodedField*, arcticdb::proto::encoding::EncodedField*> variant_field,
+    std::variant<EncodedFieldImpl*, arcticdb::proto::encoding::EncodedField*> variant_field,
     Buffer& out,
     std::ptrdiff_t& pos
 ) {
