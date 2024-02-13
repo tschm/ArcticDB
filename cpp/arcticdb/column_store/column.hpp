@@ -657,14 +657,15 @@ public:
 
     /*
      * !!!!!!!!!!----------IMPORTANT----------!!!!!!!!!!
-     * When adding new uses of these static methods, add an internal::check<...>(f.heapAllocatedMemory() == 0,...)
-     * and run all of the tests in CI on all supported platforms. We do not want these checks in the released code,
-     * but also do not want any passed in lambdas to be heap allocated.
+     * When adding new uses of these static methods, change the debug::checks to internal::checks and run all of the
+     * tests in CI on all supported platforms. We do not want these checks in the released code, but also do not want
+     * any passed in lambdas to be heap allocated.
      */
 
     template<typename input_tdt>
     static void for_each(const Column& input_column,
                           folly::Function<void(typename input_tdt::DataTypeTag::raw_type)>&& f) {
+        debug::check<ErrorCode::E_ASSERTION_FAILURE>(f.heapAllocatedMemory() == 0, "lambda allocated on heap in Column::for_each");
         auto input_data = input_column.data();
         std::for_each(input_data.cbegin<input_tdt, false>(), input_data.cend<input_tdt, false>(), [&f](auto input_value) {
             f(input_value);
@@ -675,6 +676,7 @@ public:
     static void transform(const Column& input_column,
                           Column& output_column,
                           folly::Function<typename output_tdt::DataTypeTag::raw_type(typename input_tdt::DataTypeTag::raw_type)>&& f) {
+        debug::check<ErrorCode::E_ASSERTION_FAILURE>(f.heapAllocatedMemory() == 0, "lambda allocated on heap in Column::transform 1");
         auto input_data = input_column.data();
         auto output_data = output_column.data();
         std::transform(input_data.cbegin<input_tdt, false>(), input_data.cend<input_tdt, false>(), output_data.begin<output_tdt, false>(), std::move(f));
@@ -721,6 +723,7 @@ public:
                           const Column& right_input_column,
                           Column& output_column,
                           folly::Function<typename output_tdt::DataTypeTag::raw_type(typename left_input_tdt::DataTypeTag::raw_type, typename right_input_tdt::DataTypeTag::raw_type)>&& f) {
+        debug::check<ErrorCode::E_ASSERTION_FAILURE>(f.heapAllocatedMemory() == 0, "lambda allocated on heap in Column::transform 2");
         auto left_input_data = left_input_column.data();
         auto right_input_data = right_input_column.data();
         set_sparse_map_and_allocate_output_buffer(left_input_column, right_input_column, output_column);
@@ -776,6 +779,7 @@ public:
     static void transform(const Column& input_column,
                           util::BitSet& output_bitset,
                           folly::Function<bool(typename input_tdt::DataTypeTag::raw_type)>&& f) {
+        debug::check<ErrorCode::E_ASSERTION_FAILURE>(f.heapAllocatedMemory() == 0, "lambda allocated on heap in Column::transform 3");
         auto input_data = input_column.data();
         util::BitSet::bulk_insert_iterator inserter(output_bitset);
         std::for_each(input_data.cbegin<input_tdt, true>(), input_data.cend<input_tdt, true>(), [&inserter, &f](auto input) {
@@ -791,6 +795,7 @@ public:
                           const Column& right_input_column,
                           util::BitSet& output_bitset,
                           folly::Function<bool(typename left_input_tdt::DataTypeTag::raw_type, typename right_input_tdt::DataTypeTag::raw_type)>&& f) {
+        debug::check<ErrorCode::E_ASSERTION_FAILURE>(f.heapAllocatedMemory() == 0, "lambda allocated on heap in Column::transform 4");
         auto left_input_data = left_input_column.data();
         auto right_it = right_input_column.data().cbegin<right_input_tdt, true>();
         util::BitSet::bulk_insert_iterator inserter(output_bitset);
