@@ -224,29 +224,33 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
             LoadParameter load_param{LoadType::LOAD_DOWNTO, static_cast<SignedVersionId>(sym_version.second)};
             return async::submit_io_task(CheckReloadTask{store, version_map, sym_version.first, load_param});
         },
-        [output, include_deleted, include_referenced_in_snapshot_only, output_mutex, store, tombstoned_vers, tombstoned_vers_mutex](auto sym_version, const std::shared_ptr<VersionMapEntry>& entry) {
-        auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(sym_version.second, entry);
-        if (key_and_is_tombstoned) {
-            bool is_valid_key = include_deleted || !key_and_is_tombstoned->second;
-            if (!is_valid_key && include_referenced_in_snapshot_only && key_and_is_tombstoned->second) { // Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
-                log::version().warn("Version {} for symbol {} is tombstoned, need to check snapshots (this can be slow)", sym_version.second, sym_version.first);
-                std::lock_guard lock{*tombstoned_vers_mutex};
-                tombstoned_vers->emplace_back(sym_version.first, key_and_is_tombstoned->first);
+        [output, include_deleted, include_referenced_in_snapshot_only, output_mutex, store, tombstoned_vers, tombstoned_vers_mutex]
+                    (auto sym_version, const std::shared_ptr<VersionMapEntry>& entry) {
+            auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(sym_version.second, entry);
+            if (key_and_is_tombstoned) {
+                auto [key, is_tombstoned] = key_and_is_tombstoned.value();
+                bool is_valid_key = include_deleted || !is_tombstoned;
+                if (is_valid_key) {
+                    std::lock_guard lock{*output_mutex};
+                    (*output)[sym_version.first] = key;
+                }
+                else if (include_referenced_in_snapshot_only && is_tombstoned) { // Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
+                    log::version().warn("Version {} for symbol {} is tombstoned, need to check snapshots (this can be slow)", sym_version.second, sym_version.first);
+                    std::lock_guard lock{*tombstoned_vers_mutex};
+                    tombstoned_vers->emplace_back(sym_version.first, key);
+                }
             }
-            if (is_valid_key) {
-                std::lock_guard lock{*output_mutex};
-                (*output)[sym_version.first] = key_and_is_tombstoned->first;
-            }
-        }
-    });
+        });
 
     if (!tombstoned_vers->empty()) {
         auto snap_map = get_master_snapshots_map(store);
-        submit_cpu_task_for_range(*tombstoned_vers, [&snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex](const auto& tombstoned_ver) {
-            return async::submit_cpu_task(IterationTask{[&tombstoned_ver = std::as_const(tombstoned_ver), &snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex]() {
+        submit_cpu_task_for_range(*tombstoned_vers,
+                    [&snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex](const auto& tombstoned_ver) {
+            return async::submit_cpu_task(IterationTask{
+                        [&tombstoned_ver = std::as_const(tombstoned_ver), &snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex]() {
                 auto cit = snap_map.find(tombstoned_ver.first);
                 if (cit != snap_map.cend() && std::any_of(cit->second.cbegin(), cit->second.cend(), 
-                                                [&tombstoned_ver = std::as_const(tombstoned_ver), &sym_versions = std::as_const(sym_versions)](const auto &key_and_snapshot_ids) {
+                            [&tombstoned_ver = std::as_const(tombstoned_ver), &sym_versions = std::as_const(sym_versions)](const auto &key_and_snapshot_ids) {
                     return key_and_snapshot_ids.first.version_id() == sym_versions.at(tombstoned_ver.first);
                 })) {
                     std::lock_guard lock{*output_mutex};

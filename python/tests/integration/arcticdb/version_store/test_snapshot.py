@@ -447,24 +447,24 @@ def test_snapshot_tombstoned_key(basic_store_delayed_deletes_v1):
     symA = "A"
     symB = "B"
 
-    symAver1 = lib.write(symA, 1).version
-    symAver2 = lib.write(symA, 2).version
-    with pytest.raises(NoSuchVersionException): # Non-snapshotted, tombstoned version shouldn't readable; Just to make sure right fixutre is picked during refactoring
-        lib.read(symA, as_of=symAver1)
+    symA_ver1 = lib.write(symA, 1).version
+    symA_ver2 = lib.write(symA, 2).version
+    with pytest.raises(NoSuchVersionException):
+        lib.read(symA, as_of=symA_ver1)
 
-    symBver1 = lib.write(symB, 3).version
-    symBver2 = lib.write(symB, 4).version
+    symB_ver1 = lib.write(symB, 3).version
+    symB_ver2 = lib.write(symB, 4).version
         
-    lib.snapshot("s", versions={symA:symAver1, symB:symBver1})
+    lib.snapshot("s", versions={symA:symA_ver1, symB:symB_ver1})
     assert len(lib.list_snapshots()) == 0 # Snapshot fail shouldn't throw exception but warning
 
-    lib.snapshot("s", versions={symA:symAver2, symB:symBver2})
+    lib.snapshot("s", versions={symA:symA_ver2, symB:symB_ver2})
     assert len(lib.list_snapshots()) == 1
 
     # Need to allow tombstoned version but referenced in other snapshot(s) can be "re-snapshot"
     lib.write(symA, 5).version
     lib.write(symB, 6).version
-    lib.snapshot("s2", versions={symA:symAver2, symB:symBver2})
+    lib.snapshot("s2", versions={symA:symA_ver2, symB:symB_ver2})
     lib.delete_snapshot("s")
     assert len(lib.list_snapshots()) == 1
     assert lib.read(symA, as_of="s2").data == 2

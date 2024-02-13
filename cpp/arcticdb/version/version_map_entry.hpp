@@ -392,7 +392,8 @@ inline std::optional<AtomKey> find_index_key_for_version_id(
     auto key_and_is_tombstoned = find_index_key_for_version_id_and_tombstone_status(version_id, entry);
     if (!key_and_is_tombstoned)
         return std::nullopt;
-    return included_deleted || !key_and_is_tombstoned->second ? std::make_optional(key_and_is_tombstoned->first) : std::nullopt;
+    auto [key, is_tombstoned] = key_and_is_tombstoned.value();
+    return included_deleted || !is_tombstoned ? std::make_optional(key) : std::nullopt;
 }
 
 inline std::optional<std::pair<AtomKey, AtomKey>> get_latest_key_pair(const std::shared_ptr<VersionMapEntry>& entry) {
