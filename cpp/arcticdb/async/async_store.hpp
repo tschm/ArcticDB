@@ -316,38 +316,38 @@ std::vector<folly::Future<bool>> batch_key_exists(
 }
 
 
-    folly::Future<SliceAndKey> async_write(
+folly::Future<SliceAndKey> async_write(
             folly::Future<std::tuple<PartialKey, SegmentInMemory, pipelines::FrameSlice>> &&input_fut,
             const std::shared_ptr<DeDupMap> &de_dup_map) override {
-        using KeyOptSegment = std::pair<VariantKey, std::optional<Segment>>;
-        return std::move(input_fut).thenValue([this] (auto&& input) {
-            auto [key, seg, slice] = std::move(input);
-            auto key_seg = EncodeAtomTask{
-                std::move(key),
-                ClockType::nanos_since_epoch(),
-                std::move(seg),
-                codec_,
-                encoding_version_}();
-            return std::pair<storage::KeySegmentPair, FrameSlice>(std::move(key_seg), std::move(slice));
-        })
-        .thenValue([de_dup_map](auto &&ks) -> std::pair<KeyOptSegment, pipelines::FrameSlice> {
-            auto [key_seg, slice] = std::forward<decltype(ks)>(ks);
-            return std::make_pair(lookup_match_in_dedup_map(de_dup_map, std::move(key_seg)), std::move(slice));
-        })
-        .via(&async::io_executor())
-        .thenValue([lib=library_](auto &&item) {
-            auto [key_opt_segment, slice] = std::forward<decltype(item)>(item);
-            if (key_opt_segment.second)
-                lib->write(Composite<storage::KeySegmentPair>({VariantKey{key_opt_segment.first},
-                                                               std::move(*key_opt_segment.second)}));
+    using KeyOptSegment = std::pair<VariantKey, std::optional<Segment>>;
+    return std::move(input_fut).thenValue([this] (auto&& input) {
+        auto [key, seg, slice] = std::move(input);
+        auto key_seg = EncodeAtomTask{
+            std::move(key),
+            ClockType::nanos_since_epoch(),
+            std::move(seg),
+            codec_,
+            encoding_version_}();
+        return std::pair<storage::KeySegmentPair, FrameSlice>(std::move(key_seg), std::move(slice));
+    })
+    .thenValue([de_dup_map](auto &&ks) -> std::pair<KeyOptSegment, pipelines::FrameSlice> {
+        auto [key_seg, slice] = std::forward<decltype(ks)>(ks);
+        return std::make_pair(lookup_match_in_dedup_map(de_dup_map, std::move(key_seg)), std::move(slice));
+    })
+    .via(&async::io_executor())
+    .thenValue([lib=library_](auto &&item) {
+        auto [key_opt_segment, slice] = std::forward<decltype(item)>(item);
+        if (key_opt_segment.second)
+            lib->write(Composite<storage::KeySegmentPair>({VariantKey{key_opt_segment.first},
+                                                            std::move(*key_opt_segment.second)}));
 
-            return SliceAndKey{slice, to_atom(key_opt_segment.first)};
-        });
-    }
+        return SliceAndKey{slice, to_atom(key_opt_segment.first)};
+    });
+}
 
-    void set_failure_sim(const arcticdb::proto::storage::VersionStoreConfig::StorageFailureSimulator &cfg) override {
-        library_->set_failure_sim(cfg);
-    }
+void set_failure_sim(const arcticdb::proto::storage::VersionStoreConfig::StorageFailureSimulator &cfg) override {
+    library_->set_failure_sim(cfg);
+}
 
 private:
     std::shared_ptr<storage::Library> library_;

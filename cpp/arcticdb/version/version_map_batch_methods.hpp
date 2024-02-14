@@ -191,18 +191,21 @@ inline void submit_cpu_task_for_range(const Inputs& inputs, TaskSubmitter submit
     internal::check<ErrorCode::E_RUNTIME_ERROR>(!all_exceptions.has_value(), all_exceptions.value_or(""));
 }
 
-template <typename Task>
+template <typename Task, typename... T>
 struct IterationTask : async::BaseTask {
     Task func_;
+    std::tuple<T...> items;
     explicit IterationTask(
-            Task&& func) :
-            func_(std::move(func)) {
+            Task&& func,
+            T&&... t) :
+            func_(std::move(func)),
+            items{std::make_tuple(std::forward<T>(t)...)} {
     }
 
     ARCTICDB_MOVE_ONLY_DEFAULT(IterationTask)
 
     void operator()() {
-        func_();
+        std::apply(func_, std::forward<decltype(items)>(items));
     }
 };
 
@@ -243,20 +246,19 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
         });
 
     if (!tombstoned_vers->empty()) {
-        auto snap_map = get_master_snapshots_map(store);
-        submit_cpu_task_for_range(*tombstoned_vers,
-                    [&snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex](const auto& tombstoned_ver) {
-            return async::submit_cpu_task(IterationTask{
-                        [&tombstoned_ver = std::as_const(tombstoned_ver), &snap_map = std::as_const(snap_map), &sym_versions = std::as_const(sym_versions), output, output_mutex]() {
+        const auto snap_map = get_master_snapshots_map(store);
+        submit_cpu_task_for_range(*tombstoned_vers, [&snap_map, &sym_versions, output, output_mutex](const auto& tombstoned_ver) mutable {
+            return async::submit_cpu_task(IterationTask{[](const std::pair<StreamId, AtomKey>& tombstoned_ver, const MasterSnapshotMap& snap_map, 
+                        const std::map<StreamId, VersionId>& sym_versions, auto output, auto output_mutex) {
                 auto cit = snap_map.find(tombstoned_ver.first);
                 if (cit != snap_map.cend() && std::any_of(cit->second.cbegin(), cit->second.cend(), 
-                            [&tombstoned_ver = std::as_const(tombstoned_ver), &sym_versions = std::as_const(sym_versions)](const auto &key_and_snapshot_ids) {
+                            [&tombstoned_ver, &sym_versions](const auto &key_and_snapshot_ids) {
                     return key_and_snapshot_ids.first.version_id() == sym_versions.at(tombstoned_ver.first);
                 })) {
                     std::lock_guard lock{*output_mutex};
                     (*output)[tombstoned_ver.first] = tombstoned_ver.second;
                 }
-            }});
+            }, std::cref(tombstoned_ver), std::cref(snap_map), std::cref(sym_versions), std::move(output), std::move(output_mutex)});
         });
     }
 
