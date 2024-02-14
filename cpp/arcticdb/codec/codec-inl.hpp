@@ -51,7 +51,7 @@ void decode_block(const BlockType &block, const std::uint8_t *input, T *output) 
                 decoded_size);
             break;
         default:
-            util::raise_rte("Unsupported block codec {}", block);
+            util::raise_rte("Unsupported block codec {}", codec_type_to_string(block.codec().codec_type()));
         }
     }
 }

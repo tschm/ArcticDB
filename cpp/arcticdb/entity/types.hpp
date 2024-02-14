@@ -12,6 +12,7 @@
 #include <arcticdb/util/variant.hpp>
 #include <arcticdb/log/log.hpp>
 #include <google/protobuf/util/message_differencer.h>
+#include <arcticdb/memory_layout.hpp>
 
 #include <fmt/format.h>
 
@@ -39,45 +40,15 @@ namespace arcticdb::proto {
     namespace descriptors = arcticc::pb2::descriptors_pb2;
 }
 
-namespace arcticdb::entity {
-
-enum class SortedValue : uint8_t {
-    UNKNOWN = 0,
-    UNSORTED = 1,
-    ASCENDING = 2,
-    DESCENDING = 3,
-};
-
-inline arcticdb::proto::descriptors::SortedValue sorted_value_to_proto(SortedValue sorted) {
-    switch (sorted) {
-    case SortedValue::UNSORTED:
-        return arcticdb::proto::descriptors::SortedValue::UNSORTED;
-    case SortedValue::DESCENDING:
-        return arcticdb::proto::descriptors::SortedValue::DESCENDING;
-    case SortedValue::ASCENDING:
-        return arcticdb::proto::descriptors::SortedValue::ASCENDING;
-    default:
-        return arcticdb::proto::descriptors::SortedValue::UNKNOWN;
-    }
-}
-
-inline SortedValue sorted_value_from_proto(arcticdb::proto::descriptors::SortedValue sorted_proto) {
-    switch (sorted_proto) {
-    case arcticdb::proto::descriptors::SortedValue::UNSORTED:
-        return SortedValue::UNSORTED;
-    case arcticdb::proto::descriptors::SortedValue::DESCENDING:
-        return SortedValue::DESCENDING;
-    case arcticdb::proto::descriptors::SortedValue::ASCENDING:
-        return SortedValue::ASCENDING;
-    default:
-        return SortedValue::UNKNOWN;
-    }
-}
+namespace arcticdb {
 
 using NumericId = int64_t;
 using StringId = std::string;
 using VariantId = std::variant<NumericId, StringId>;
 using StreamId = VariantId;
+
+namespace entity {
+
 using SnapshotId = VariantId;
 using VersionId = uint64_t;
 using SignedVersionId = int64_t;
@@ -608,39 +579,30 @@ inline arcticdb::proto::descriptors::StreamDescriptor_FieldDescriptor field_prot
 }
 
 struct IndexDescriptor {
-        using Proto = arcticdb::proto::descriptors::IndexDescriptor;
+    enum class Type : int32_t {
+        UNKNOWN = 0,
+        ROWCOUNT = 82,
+        STRING = 83,
+        TIMESTAMP = 84
+    };
 
-
-    using Type = arcticdb::proto::descriptors::IndexDescriptor::Type;
-
-    static const Type UNKNOWN = arcticdb::proto::descriptors::IndexDescriptor_Type_UNKNOWN;
-    static const Type ROWCOUNT = arcticdb::proto::descriptors::IndexDescriptor_Type_ROWCOUNT;
-    static const Type STRING = arcticdb::proto::descriptors::IndexDescriptor_Type_STRING;
-    static const Type TIMESTAMP = arcticdb::proto::descriptors::IndexDescriptor_Type_TIMESTAMP;
+    Type type_ = Type::UNKNOWN;
+    uint32_t field_count_ = 0U;
 
     using TypeChar = char;
 
-    uint32_t field_count_;
-    Type type_;
-
     IndexDescriptor() = default;
-    IndexDescriptor(uint32_t field_count, Type type) :
-        field_count_(field_count),
-        type_(type) {
-    }
 
-    [[nodiscard]] Proto to_proto() { //TODO move elsewhere
-        Proto proto;
-        proto.set_kind(type_);
-        proto.set_field_count(field_count_);
-        return proto;
+    IndexDescriptor(uint32_t field_count, Type type) :
+        type_(type),
+        field_count_(field_count) {
     }
 
     [[nodiscard]] bool uninitialized() const {
-        return field_count() == 0 && type_ == Type::IndexDescriptor_Type_UNKNOWN;
+        return field_count() == 0 && type_ == Type::UNKNOWN;
     }
 
-    uint32_t field_count() const {
+    [[nodiscard]] uint32_t field_count() const {
         return field_count_;
     }
 
@@ -659,26 +621,26 @@ struct IndexDescriptor {
     ARCTICDB_MOVE_COPY_DEFAULT(IndexDescriptor)
 
     friend bool operator==(const IndexDescriptor& left, const IndexDescriptor& right) {
-        return left.type() == right.type();
+        return left.type() == right.type() && left.field_count_ == right.field_count_;
     }
 };
 
 constexpr IndexDescriptor::TypeChar to_type_char(IndexDescriptor::Type type) {
     switch (type) {
-    case IndexDescriptor::TIMESTAMP:return 'T';
-    case IndexDescriptor::ROWCOUNT:return 'R';
-    case IndexDescriptor::STRING:return 'S';
-    case IndexDescriptor::UNKNOWN:return 'U';
+    case IndexDescriptor::Type::TIMESTAMP:return 'T';
+    case IndexDescriptor::Type::ROWCOUNT:return 'R';
+    case IndexDescriptor::Type::STRING:return 'S';
+    case IndexDescriptor::Type::UNKNOWN:return 'U';
     default:util::raise_rte("Unknown index type: {}", int(type));
     }
 }
 
 constexpr IndexDescriptor::Type from_type_char(IndexDescriptor::TypeChar type) {
     switch (type) {
-    case 'T': return IndexDescriptor::TIMESTAMP;
-    case 'R': return IndexDescriptor::ROWCOUNT;
-    case 'S': return IndexDescriptor::STRING;
-    case 'U': return IndexDescriptor::UNKNOWN;
+    case 'T': return IndexDescriptor::Type::TIMESTAMP;
+    case 'R': return IndexDescriptor::Type::ROWCOUNT;
+    case 'S': return IndexDescriptor::Type::STRING;
+    case 'U': return IndexDescriptor::Type::UNKNOWN;
     default:util::raise_rte("Unknown index type: {}", int(type));
     }
 }
@@ -800,15 +762,16 @@ inline bool operator!=(const Field& l, const Field& r) {
     return !(l == r);
 }
 
-} // namespace arcticdb::entity
+} //namespace entity
+}// namespace arcticdb
 
 // StreamId ordering - numbers before strings
 namespace std {
 template<>
-struct less<arcticdb::entity::StreamId> {
+struct less<arcticdb::StreamId> {
 
-    bool operator()(const arcticdb::entity::StreamId &left, const arcticdb::entity::StreamId &right) const {
-        using namespace arcticdb::entity;
+    bool operator()(const arcticdb::StreamId &left, const arcticdb::StreamId &right) const {
+        using namespace arcticdb;
         if (std::holds_alternative<NumericId>(left)) {
             if (std::holds_alternative<NumericId>(right))
                 return left < right;
@@ -822,7 +785,8 @@ struct less<arcticdb::entity::StreamId> {
         }
     }
 };
-}
+
+} // namespace std
 
 namespace fmt {
 
@@ -840,7 +804,7 @@ struct formatter<FieldRef> {
     }
 };
 
-}
+} //namespace fmt
 
 #define ARCTICDB_TYPES_H_
 #include "types-inl.hpp"

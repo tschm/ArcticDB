@@ -4,7 +4,6 @@
 
 namespace arcticdb {
 
-
 #pragma pack(push)
 #pragma pack(1)
 
@@ -121,13 +120,26 @@ struct HeaderData { ;
     uint64_t footer_offset_ = 0;
 };
 
-struct StreamDescriptorData {
-    SortedValue sorted_ = SortedValue::UNKNOWN;
-    uint64_t compressed_bytes_ = 0UL;
-    uint64_t uncompressed_bytes_ = 0UL;
-    StreamId stream_id_;
-    IndexDescriptor index_ = IndexDescriptor{};
+enum class SortedValue : uint8_t {
+    UNKNOWN = 0,
+    UNSORTED = 1,
+    ASCENDING = 2,
+    DESCENDING = 3,
 };
+
+struct IndexData {
+    enum class Type : int32_t {
+        UNKNOWN = 0,
+        ROWCOUNT = 82,
+        STRING = 83,
+        TIMESTAMP = 84
+    };
+
+    Type type_ = Type::UNKNOWN;
+    uint32_t field_count_ = 0U;
+};
+
+
 
 #pragma pack(pop)
 }

@@ -50,7 +50,7 @@ TimeseriesDescriptor timseries_descriptor_from_index_segment(
 ) {
     return make_timeseries_descriptor(
         total_rows,
-        StreamDescriptor{std::make_shared<StreamDescriptor::Proto>(std::move(*index_segment_reader.mutable_tsd().mutable_proto().mutable_stream_descriptor())),index_segment_reader.mutable_tsd().fields_ptr()},
+        index_segment_reader.index_descriptor(),
         std::move(*index_segment_reader.mutable_tsd().mutable_proto().mutable_normalization()),
         std::move(*index_segment_reader.mutable_tsd().mutable_proto().mutable_user_meta()),
         std::move(prev_key),

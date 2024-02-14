@@ -472,16 +472,14 @@ void add_bitmagic_compressed_size(
 
 void encode_sparse_map(
     ColumnData& column_data,
-    std::variant<EncodedFieldImpl*, arcticdb::proto::encoding::EncodedField*> variant_field,
+    EncodedFieldImpl& field,
     Buffer& out,
     std::ptrdiff_t& pos
 ) {
     if (column_data.bit_vector() != nullptr && column_data.bit_vector()->count() > 0)   {
         ARCTICDB_DEBUG(log::codec(), "Sparse map count = {} pos = {}", column_data.bit_vector()->count(), pos);
         const size_t sparse_bm_bytes = encode_bitmap(*column_data.bit_vector(), out, pos);
-        util::variant_match(variant_field, [&](auto field) {
-            field->mutable_ndarray()->set_sparse_map_bytes(static_cast<int>(sparse_bm_bytes));
-        });
+        field.mutable_ndarray()->set_sparse_map_bytes(static_cast<int>(sparse_bm_bytes));
     }
 }
 } // namespace arcticdb

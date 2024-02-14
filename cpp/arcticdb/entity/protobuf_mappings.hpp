@@ -16,6 +16,40 @@ namespace arcticdb {
 
 using namespace arcticdb::entity;
 
+
+inline arcticdb::proto::descriptors::SortedValue sorted_value_to_proto(SortedValue sorted) {
+    switch (sorted) {
+    case SortedValue::UNSORTED:
+        return arcticdb::proto::descriptors::SortedValue::UNSORTED;
+    case SortedValue::DESCENDING:
+        return arcticdb::proto::descriptors::SortedValue::DESCENDING;
+    case SortedValue::ASCENDING:
+        return arcticdb::proto::descriptors::SortedValue::ASCENDING;
+    default:
+        return arcticdb::proto::descriptors::SortedValue::UNKNOWN;
+    }
+}
+
+inline SortedValue sorted_value_from_proto(arcticdb::proto::descriptors::SortedValue sorted_proto) {
+    switch (sorted_proto) {
+    case arcticdb::proto::descriptors::SortedValue::UNSORTED:
+        return SortedValue::UNSORTED;
+    case arcticdb::proto::descriptors::SortedValue::DESCENDING:
+        return SortedValue::DESCENDING;
+    case arcticdb::proto::descriptors::SortedValue::ASCENDING:
+        return SortedValue::ASCENDING;
+    default:
+        return SortedValue::UNKNOWN;
+    }
+}
+
+[[nodiscard]] arcticdb::proto::descriptors::IndexDescriptor index_descriptor_to_proto(const IndexDescriptor index_descriptor) { //TODO move elsewhere
+    arcticdb::proto::descriptors::IndexDescriptor proto;
+    proto.set_kind(static_cast<arcticc::pb2::descriptors_pb2::IndexDescriptor_Type>(index_descriptor.type_));
+    proto.set_field_count(index_descriptor.field_count_);
+    return proto;
+}
+
 inline arcticdb::proto::descriptors::AtomKey encode_key(const AtomKey &key) {
     arcticdb::proto::descriptors::AtomKey output;
     util::variant_match(key.id(),

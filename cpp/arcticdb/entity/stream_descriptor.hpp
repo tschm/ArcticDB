@@ -13,6 +13,13 @@
 
 namespace arcticdb::entity {
 
+struct StreamDescriptorData {
+    SortedValue sorted_ = SortedValue::UNKNOWN;
+    uint64_t compressed_bytes_ = 0UL;
+    uint64_t uncompressed_bytes_ = 0UL;
+    StreamId stream_id_;
+    IndexDescriptor index_;
+};
 
 struct StreamDescriptorDataImpl : public StreamDescriptorData {
     StreamDescriptorDataImpl() = default;
@@ -170,8 +177,12 @@ struct StreamDescriptor {
         return fields_->add(field);
     }
 
-    std::shared_ptr<FieldCollection> fields_ptr() const {
+    [[nodiscard]] std::shared_ptr<FieldCollection> fields_ptr() const {
         return fields_;
+    }
+
+    [[nodiscard]] std::shared_ptr<StreamDescriptorDataImpl> data_ptr() const {
+        return data_;
     }
 
     decltype(auto) begin() {
@@ -239,18 +250,16 @@ struct StreamDescriptor {
 };
 
 template <class IndexType>
-inline void set_index(arcticdb::proto::descriptors::StreamDescriptor &stream_desc) {
-    auto& pb_desc = *stream_desc.mutable_index();
-    pb_desc.set_field_count(std::uint32_t(IndexType::field_count()));
-    pb_desc.set_kind(static_cast<arcticdb::proto::descriptors::IndexDescriptor_Type>(
-        static_cast<int>(IndexType::type())));
+inline void set_index(StreamDescriptor &stream_desc) {
+    stream_desc.set_index_field_count(std::uint32_t(IndexType::field_count()));
+    stream_desc.set_index_type(IndexType::type());
 }
 
 template <typename IndexType, typename RangeType>
 StreamDescriptor index_descriptor(const StreamId& stream_id, IndexType, const RangeType& fields) {
     StreamDescriptor desc;
     desc.set_id(stream_id);
-    desc.set_index(IndexType{});
+    set_index<IndexType>(desc);
     auto out_fields = std::make_shared<FieldCollection>();
     for(const auto& field : fields) {
         out_fields->add({field.type(), field.name()});
@@ -260,8 +269,7 @@ StreamDescriptor index_descriptor(const StreamId& stream_id, IndexType, const Ra
 }
 
 template <typename IndexType>
-StreamDescriptor index_descriptor(StreamId stream_id, IndexType index_type,
-                                  std::initializer_list<FieldRef> fields) {
+StreamDescriptor index_descriptor(StreamId stream_id, IndexType index_type, std::initializer_list<FieldRef> fields) {
     return index_descriptor(stream_id, index_type, folly::gen::from(fields) | folly::gen::as<std::vector>());
 }
 
@@ -270,7 +278,7 @@ StreamDescriptor stream_descriptor(const StreamId& stream_id, IndexType idx, Ran
     StreamDescriptor output;
 
     output.set_id(stream_id);
-    set_index<IndexType>(*output.data_);
+    set_index<IndexType>(output);
     for(auto i = 0u; i < IndexType::field_count(); ++i) {
         const auto& field = idx.field(i);
         output.add_field(FieldRef{field.type(), field.name()});

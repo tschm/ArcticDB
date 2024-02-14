@@ -18,7 +18,7 @@ namespace arcticdb {
 
     void encode_sparse_map(
         ColumnData& column_data,
-        std::variant<EncodedFieldImpl*, arcticdb::proto::encoding::EncodedField*> variant_field,
+        EncodedFieldImpl& variant_field,
         Buffer& out,
         std::ptrdiff_t& pos
     );
@@ -32,7 +32,7 @@ namespace arcticdb {
         static void encode(
             const arcticdb::proto::encoding::VariantCodec &codec_opts,
             ColumnData& column_data,
-            std::variant<EncodedFieldImpl*, arcticdb::proto::encoding::EncodedField*> variant_field,
+            EncodedFieldImpl& variant_field,
             Buffer& out,
             std::ptrdiff_t& pos);
     };
@@ -66,7 +66,7 @@ namespace arcticdb {
     void ColumnEncoderV1::encode(
         const arcticdb::proto::encoding::VariantCodec& codec_opts,
         ColumnData& column_data,
-        std::variant<EncodedFieldImpl*, arcticdb::proto::encoding::EncodedField*> variant_field,
+        EncodedFieldImpl& field,
         Buffer& out,
         std::ptrdiff_t& pos
     ) {
@@ -78,12 +78,10 @@ namespace arcticdb {
                 if constexpr(must_contain_data(static_cast<TypeDescriptor>(type_desc_tag))) {
                     util::check(block.value().nbytes() > 0, "Zero-sized block");
                 }
-                std::visit([&](auto field){
-                    Encoder::encode(codec_opts, block.value(), *field, out, pos);
-                }, variant_field);
+                Encoder::encode(codec_opts, block.value(), field, out, pos);
             }
         });
-        encode_sparse_map(column_data, variant_field, out, pos);
+        encode_sparse_map(column_data, field, out, pos);
     }
 
     using EncodingPolicyV1 = EncodingPolicyType<EncodingVersion::V1, ColumnEncoderV1>;
@@ -111,10 +109,9 @@ namespace arcticdb {
          */
         ARCTICDB_SAMPLE(EncodeSegment, 0)
         auto in_mem_seg = std::move(s);
-        auto arena = std::make_unique<google::protobuf::Arena>();
-        auto segment_header = google::protobuf::Arena::CreateMessage<arcticdb::proto::encoding::SegmentHeader>(arena.get());
-        *segment_header->mutable_stream_descriptor() = in_mem_seg.descriptor().copy_to_proto();
-        segment_header->set_compacted(in_mem_seg.compacted());
+        SegmentHeader segment_header{EncodingVersion::V2};
+        segment_header.set_compacted(in_mem_seg.compacted());
+
         std::ptrdiff_t pos = 0;
         static auto block_to_header_ratio = ConfigsMap::instance()->get_int("Codec.EstimatedHeaderRatio", 75);
         const auto preamble = in_mem_seg.num_blocks() * block_to_header_ratio;
@@ -124,10 +121,10 @@ namespace arcticdb {
         ColumnEncoderV1 encoder;
 
         ARCTICDB_TRACE(log::codec(), "Encoding descriptor: {}", segment_header->stream_descriptor().DebugString());
-        auto *tsd = segment_header->mutable_stream_descriptor();
-        tsd->set_in_bytes(uncompressed_size);
+        auto descriptor_data = in_mem_seg.descriptor().data_ptr();
+        descriptor_data->uncompressed_bytes_ = uncompressed_size;
 
-        encode_metadata<EncodingPolicyV1>(in_mem_seg, *segment_header, codec_opts, *out_buffer, pos);
+        encode_metadata<EncodingPolicyV1>(in_mem_seg, segment_header, codec_opts, *out_buffer, pos);
 
         if(in_mem_seg.row_count() > 0) {
             ARCTICDB_TRACE(log::codec(), "Encoding fields");
@@ -141,13 +138,7 @@ namespace arcticdb {
         }
         ARCTICDB_DEBUG(log::codec(), "Setting buffer bytes to {}", pos);
         out_buffer->set_bytes(pos);
-        tsd->set_out_bytes(pos);
-        ARCTICDB_DEBUG(log::codec(), "Encoded header: {}", tsd->DebugString());
-        if(!segment_header->has_metadata_field())
-            ARCTICDB_DEBUG(log::codec(), "No metadata field");
-        ARCTICDB_DEBUG(log::codec(), "Block count {} header size {} ratio {}",
-            in_mem_seg.num_blocks(), segment_header->ByteSizeLong(),
-            in_mem_seg.num_blocks() ? segment_header->ByteSizeLong() / in_mem_seg.num_blocks() : 0);
-        return {std::move(arena), segment_header, std::move(out_buffer), in_mem_seg.descriptor().fields_ptr()};
+        descriptor_data->compressed_bytes_ = pos;
+        return {std::move(segment_header), std::move(out_buffer), descriptor_data, in_mem_seg.descriptor().fields_ptr()};
     }
 }

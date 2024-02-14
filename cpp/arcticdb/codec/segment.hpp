@@ -27,7 +27,6 @@ namespace segment_size {
 std::tuple<size_t, size_t> compressed(const arcticdb::proto::encoding::SegmentHeader& seg_hdr);
 }
 
-
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
 constexpr EncodingVersion to_encoding_version(T encoding_version) {
     util::check(encoding_version >= 0 && encoding_version < uint16_t(EncodingVersion::COUNT), "Invalid encoding version");
@@ -177,7 +176,7 @@ class Segment {
         return keepalive_;
     }
 
-    const StreamDescriptor& descriptor() const {
+    [[nodiscard]] const StreamDescriptor& descriptor() const {
         return desc_;
     }
 

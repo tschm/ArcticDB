@@ -381,7 +381,7 @@ inline FrameAndDescriptor frame_and_descriptor_from_segment(SegmentInMemory&& se
     tsd_proto.set_total_rows(seg.row_count());
     const auto& seg_descriptor = seg.descriptor();
     tsd_proto.mutable_stream_descriptor()->CopyFrom(seg_descriptor.proto());
-    if(seg.descriptor().index().type() == IndexDescriptor::ROWCOUNT)
+    if(seg.descriptor().index().type() == IndexDescriptor::Type::ROWCOUNT)
         ensure_rowcount_norm_meta(*tsd_proto.mutable_normalization(), seg_descriptor.id());
     else
         ensure_timeseries_norm_meta(*tsd.mutable_proto().mutable_normalization(), seg_descriptor.id(), false);

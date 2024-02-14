@@ -258,8 +258,8 @@ namespace s3 {
             // the Descriptor.
             // TODO: Set the IndexDescriptor correctly
             KeyDescriptor key_descriptor(prefix,
-                                         is_ref_key_class(key_type) ? IndexDescriptor::UNKNOWN
-                                                                    : IndexDescriptor::TIMESTAMP,
+                                         is_ref_key_class(key_type) ? IndexDescriptor::Type::UNKNOWN
+                                                                    : IndexDescriptor::Type::TIMESTAMP,
                                          FormatType::TOKENIZED);
             auto key_prefix = prefix_handler(prefix, key_type_dir, key_descriptor, key_type);
             ARCTICDB_RUNTIME_DEBUG(log::storage(), "Searching for objects in bucket {} with prefix {}", bucket_name,

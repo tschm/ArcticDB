@@ -37,11 +37,11 @@ template<typename RowType>
 std::optional<IndexValue> index_value_from_row(const RowType &row, IndexDescriptor::Type index_type, int field_num) {
     std::optional<IndexValue> index_value;
     switch (index_type) {
-    case IndexDescriptor::TIMESTAMP:
-        case IndexDescriptor::ROWCOUNT:
+    case IndexDescriptor::Type::TIMESTAMP:
+        case IndexDescriptor::Type::ROWCOUNT:
             index_value = row.template scalar_at<timestamp>(field_num);
             break;
-            case IndexDescriptor::STRING: {
+            case IndexDescriptor::Type::STRING: {
                 auto opt = row.string_at(field_num);
                 index_value = opt ? std::make_optional<IndexValue>(std::string(opt.value())) : std::nullopt;
                 break;
@@ -62,11 +62,11 @@ template<typename SegmentType, typename FieldType=pipelines::index::Fields>
     auto index_type = seg.template scalar_at<uint8_t>(row_id, int(FieldType::index_type));
     IndexValue index_value;
     switch (index_type.value()) {
-    case IndexDescriptor::TIMESTAMP:
-        case IndexDescriptor::ROWCOUNT:
+    case IndexDescriptor::Type::TIMESTAMP:
+        case IndexDescriptor::Type::ROWCOUNT:
             index_value = seg.template scalar_at<timestamp>(row_id, int(field)).value();
             break;
-            case IndexDescriptor::STRING:
+            case IndexDescriptor::Type::STRING:
                 index_value = std::string(seg.string_at(row_id, int(field)).value());
                 break;
                 default:

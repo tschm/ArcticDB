@@ -151,12 +151,12 @@ struct formatter<arcticdb::entity::IndexDescriptor> {
     }
 };
 template<>
-struct formatter<arcticdb::entity::StreamId> {
+struct formatter<arcticdb::StreamId> {
     template<typename ParseContext>
     constexpr auto parse(ParseContext &ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
-    auto format(const arcticdb::entity::StreamId &tsid, FormatContext &ctx) const {
+    auto format(const arcticdb::StreamId &tsid, FormatContext &ctx) const {
         return std::visit([&ctx](auto &&val) {
             return format_to(ctx.out(), "{}", val);
         }, tsid);

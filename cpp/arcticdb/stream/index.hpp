@@ -23,7 +23,7 @@ namespace arcticdb::stream {
 using namespace arcticdb::entity;
 
 inline IndexDescriptor::Type get_index_value_type(const AtomKey &key) {
-    return std::holds_alternative<timestamp>(key.start_index()) ? IndexDescriptor::TIMESTAMP : IndexDescriptor::STRING;
+    return std::holds_alternative<timestamp>(key.start_index()) ? IndexDescriptor::Type::TIMESTAMP : IndexDescriptor::Type::STRING;
 }
 
 template<typename Derived>
@@ -77,7 +77,7 @@ public:
     }
 
     static constexpr IndexDescriptor::Type type() {
-        return IndexDescriptor::TIMESTAMP;
+        return IndexDescriptor::Type::TIMESTAMP;
     }
 
     void check(const FieldCollection &fields) const {
@@ -180,7 +180,7 @@ public:
     }
 
     static constexpr IndexDescriptor::Type type() {
-        return IndexDescriptor::STRING;
+        return IndexDescriptor::Type::STRING;
     }
 
     void check(const FieldCollection &fields) const {
@@ -258,7 +258,7 @@ class RowCountIndex : public BaseIndex<RowCountIndex> {
 
     static constexpr size_t field_count() { return 0; }
 
-    static constexpr IndexDescriptor::Type type() { return IndexDescriptor::ROWCOUNT; }
+    static constexpr IndexDescriptor::Type type() { return IndexDescriptor::Type::ROWCOUNT; }
 
     void check(const FieldCollection& ) const {
         // No index defined
@@ -300,11 +300,11 @@ using Index = std::variant<stream::TimeseriesIndex, stream::RowCountIndex, strea
 
 inline Index index_type_from_descriptor(const StreamDescriptor &desc) {
     switch (desc.index().type()) {
-    case IndexDescriptor::TIMESTAMP:
+    case IndexDescriptor::Type::TIMESTAMP:
         return TimeseriesIndex::make_from_descriptor(desc);
-    case IndexDescriptor::STRING:
+    case IndexDescriptor::Type::STRING:
         return TableIndex::make_from_descriptor(desc);
-    case IndexDescriptor::ROWCOUNT:
+    case IndexDescriptor::Type::ROWCOUNT:
         return RowCountIndex{};
     default:util::raise_rte("Data obtained from storage refers to an index type that this build of ArcticDB doesn't understand ({}).", int(desc.index().type()));
     }
@@ -312,11 +312,11 @@ inline Index index_type_from_descriptor(const StreamDescriptor &desc) {
 
 inline Index default_index_type_from_descriptor(const IndexDescriptor &desc) {
     switch (desc.type()) {
-    case IndexDescriptor::TIMESTAMP:
+    case IndexDescriptor::Type::TIMESTAMP:
         return TimeseriesIndex::default_index();
-    case IndexDescriptor::STRING:
+    case IndexDescriptor::Type::STRING:
         return TableIndex::default_index();
-    case IndexDescriptor::ROWCOUNT:
+    case IndexDescriptor::Type::ROWCOUNT:
         return RowCountIndex::default_index();
     default:
         util::raise_rte("Unknown index type {} trying to generate index type", int(desc.type()));
@@ -326,11 +326,11 @@ inline Index default_index_type_from_descriptor(const IndexDescriptor &desc) {
 // Only to be used for visitation to get field count etc as the name is not set
 inline Index variant_index_from_type(IndexDescriptor::Type type) {
     switch (type) {
-    case IndexDescriptor::TIMESTAMP:
+    case IndexDescriptor::Type::TIMESTAMP:
         return TimeseriesIndex{TimeseriesIndex::DefaultName};
-    case IndexDescriptor::STRING:
+    case IndexDescriptor::Type::STRING:
         return TableIndex{TableIndex::DefaultName};
-    case IndexDescriptor::ROWCOUNT:
+    case IndexDescriptor::Type::ROWCOUNT:
         return RowCountIndex{};
     default:
         util::raise_rte("Unknown index type {} trying to generate index type", int(type));

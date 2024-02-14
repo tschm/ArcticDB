@@ -47,10 +47,10 @@ inline VariantId variant_id_from_token(std::string_view strv, VariantType varian
 
 inline VariantType variant_type_from_index_type(IndexDescriptor::Type index_type) {
     switch (index_type) {
-        case IndexDescriptor::TIMESTAMP:
-        case IndexDescriptor::ROWCOUNT:
+        case IndexDescriptor::Type::TIMESTAMP:
+        case IndexDescriptor::Type::ROWCOUNT:
             return VariantType::NUMERIC_TYPE;
-        case IndexDescriptor::STRING:
+        case IndexDescriptor::Type::STRING:
             return VariantType::STRING_TYPE;
         default:
             return VariantType::UNKNOWN_TYPE;
@@ -163,7 +163,7 @@ struct KeyDescriptor {
     KeyDescriptor(const RefKey &key, FormatType format_type) :
             identifier(SerializedKeyIdentifier),
             id_type(variant_type_from_id(key.id())),
-            index_type(to_type_char(IndexDescriptor::UNKNOWN)),
+            index_type(to_type_char(IndexDescriptor::Type::UNKNOWN)),
             format_type(format_type) {
     }
 

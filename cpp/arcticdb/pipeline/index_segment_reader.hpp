@@ -81,6 +81,10 @@ struct IndexSegmentReader {
         return tsd_;
     }
 
+    StreamDescriptor index_descriptor() const {
+        return {tsd_.data_, tsd_.fields_};
+    }
+
 private:
 #ifndef _WIN32
     mutable folly::F14FastMap<ColRange, std::shared_ptr<StreamDescriptor>, AxisRange::Hasher> descriptor_by_col_group_;

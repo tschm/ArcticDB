@@ -111,8 +111,8 @@ size_t get_index_field_count(const SegmentInMemory& frame) {
     return frame.descriptor().index().field_count();
 }
 
-const uint8_t* skip_heading_fields(const arcticdb::proto::encoding::SegmentHeader & hdr, const uint8_t*& data) {
-    const auto has_magic_numbers = EncodingVersion(hdr.encoding_version()) == EncodingVersion::V2;
+const uint8_t* skip_heading_fields(const SegmentHeader & hdr, const uint8_t*& data) {
+    const auto has_magic_numbers = hdr.encoding_version() == EncodingVersion::V2;
     if(has_magic_numbers)
         util::check_magic<MetadataMagic>(data);
 
@@ -142,7 +142,7 @@ const uint8_t* skip_heading_fields(const arcticdb::proto::encoding::SegmentHeade
     return data;
 }
 
-void decode_string_pool(const arcticdb::proto::encoding::SegmentHeader & hdr, const uint8_t*& data, const uint8_t *begin ARCTICDB_UNUSED, const uint8_t* end, PipelineContextRow &context) {
+void decode_string_pool(const SegmentHeader& hdr, const uint8_t*& data, const uint8_t *begin ARCTICDB_UNUSED, const uint8_t* end, PipelineContextRow &context) {
     if (hdr.has_string_pool_field()) {
         ARCTICDB_DEBUG(log::codec(), "Decoding string pool at position: {}", data - begin);
         util::check(data != end, "Reached end of input block with string pool fields to decode");
@@ -158,16 +158,15 @@ void decode_string_pool(const arcticdb::proto::encoding::SegmentHeader & hdr, co
                        data,
                        context.string_pool(),
                        bv,
-                       to_encoding_version(hdr.encoding_version()));
+                       hdr.encoding_version());
 
         ARCTICDB_TRACE(log::codec(), "Decoded string pool to position {}", data - begin);
     }
 }
 
-template<typename EncodedFieldType>
-void decode_index_field_impl(
+void decode_index_field(
         SegmentInMemory &frame,
-        const EncodedFieldType& field,
+        const EncodedFieldImpl& field,
         const uint8_t*& data,
         const uint8_t *begin ARCTICDB_UNUSED,
         const uint8_t* end ARCTICDB_UNUSED,
@@ -205,31 +204,16 @@ void decode_index_field_impl(
     }
 }
 
-void decode_index_field(
-    SegmentInMemory& frame,
-    VariantField variant_field,
-    const uint8_t*& data,
-    const uint8_t* begin ARCTICDB_UNUSED,
-    const uint8_t* end ARCTICDB_UNUSED,
-    PipelineContextRow& context,
-    EncodingVersion encoding_version
-) {
-    util::variant_match(variant_field, [&](auto field) {
-        decode_index_field_impl(frame, *field, data, begin, end, context, encoding_version);
-    });
-}
-
-template <typename EncodedFieldType>
-void decode_or_expand_impl(
+void decode_or_expand(
     const uint8_t*& data,
     uint8_t* dest,
-    const EncodedFieldType& encoded_field_info,
+    const EncodedFieldImpl& encoded_field_info,
     const TypeDescriptor& type_descriptor,
     size_t dest_bytes,
     std::shared_ptr<BufferHolder> buffers,
 	EncodingVersion encding_version) {
     if(auto handler = TypeHandlerRegistry::instance()->get_handler(type_descriptor); handler) {
-        handler->handle_type(data, dest, VariantField{&encoded_field_info}, type_descriptor, dest_bytes, std::move(buffers), encding_version);
+        handler->handle_type(data, dest, encoded_field_info, type_descriptor, dest_bytes, std::move(buffers), encding_version);
     } else {
         std::optional<util::BitMagic> bv;
         if (encoded_field_info.has_ndarray() && encoded_field_info.ndarray().sparse_map_bytes() > 0) {
@@ -258,45 +242,30 @@ void decode_or_expand_impl(
     }
 }
 
-size_t get_field_range_compressed_size(size_t start_idx, size_t num_fields,
-                                       const arcticdb::proto::encoding::SegmentHeader& hdr,
-                                       const EncodedFieldCollection& fields) {
+size_t get_field_range_compressed_size(
+        size_t start_idx,
+        size_t num_fields,
+        const SegmentHeader& hdr,
+        const EncodedFieldCollection& fields) {
     size_t total = 0ULL;
     const size_t magic_num_size = EncodingVersion(hdr.encoding_version()) == EncodingVersion::V2 ? sizeof(ColumnMagic) : 0u;
     ARCTICDB_DEBUG(log::version(), "Skipping between {} and {}", start_idx, start_idx + num_fields);
     for(auto i = start_idx; i < start_idx + num_fields; ++i) {
-        util::variant_match(fields.at(i), [&total, magic_num_size] (const auto& field) {
-            ARCTICDB_DEBUG(log::version(), "Adding {}", encoding_sizes::ndarray_field_compressed_size(field->ndarray()) + magic_num_size);
-            total += encoding_sizes::ndarray_field_compressed_size(field->ndarray()) + magic_num_size;
-        });
+        const auto& field = fields.at(i);
+        ARCTICDB_DEBUG(log::version(), "Adding {}", encoding_sizes::ndarray_field_compressed_size(field->ndarray()) + magic_num_size);
+        total += encoding_sizes::ndarray_field_compressed_size(field.ndarray()) + magic_num_size;
     }
     ARCTICDB_DEBUG(log::version(), "Fields {} to {} contain {} bytes", start_idx, start_idx + num_fields, total);
     return total;
 }
 
-void decode_or_expand(
-    const uint8_t*& data,
-    uint8_t* dest,
-    const VariantField& variant_field,
-    const TypeDescriptor& type_descriptor,
-    size_t dest_bytes,
-    std::shared_ptr<BufferHolder> buffers,
-    EncodingVersion encoding_version
-) {
-    util::variant_match(variant_field, [&](auto field) {
-        decode_or_expand_impl(data, dest, *field, type_descriptor, dest_bytes, buffers, encoding_version);
-    });
-}
-
 void advance_field_size(
-    const VariantField& variant_field,
+    const EncodedFieldImpl& field,
     const uint8_t*& data,
     bool has_magic_numbers
     ) {
-    util::variant_match(variant_field, [&data, has_magic_numbers] (auto field) {
     const size_t magic_num_size = has_magic_numbers ? sizeof(ColumnMagic) : 0ULL;
-    data += encoding_sizes::ndarray_field_compressed_size(field->ndarray()) + magic_num_size;
-  });
+    data += encoding_sizes::ndarray_field_compressed_size(field.ndarray()) + magic_num_size;
 }
 
 void advance_skipped_cols(
@@ -306,7 +275,7 @@ void advance_skipped_cols(
         size_t first_col_offset,
         size_t index_fieldcount,
         const EncodedFieldCollection& fields,
-        const arcticdb::proto::encoding::SegmentHeader& hdr) {
+        const SegmentHeader& hdr) {
     const auto next_col = prev_col_offset + 1;
     auto skipped_cols = source_col - next_col;
     if(skipped_cols) {
@@ -341,16 +310,16 @@ void decode_into_frame_static(
     auto &hdr = seg.header();
     auto index_fieldcount = get_index_field_count(frame);
     data = skip_heading_fields(hdr, data);
-    context.set_descriptor(StreamDescriptor{ std::make_shared<StreamDescriptor::Proto>(std::move(*hdr.mutable_stream_descriptor())), seg.fields_ptr() });
+    context.set_descriptor(seg.descriptor());
     context.set_compacted(hdr.compacted());
     ARCTICDB_DEBUG(log::version(), "Num fields: {}", seg.header().fields_size());
-    const EncodingVersion encoding_version = EncodingVersion(hdr.encoding_version());
+    const auto encoding_version = hdr.encoding_version();
     const bool has_magic_nums = encoding_version == EncodingVersion::V2;
-    EncodedFieldCollection fields(seg);
+    const auto& fields = hdr.body_fields();
 
     // data == end in case we have empty data types (e.g. {EMPTYVAL, Dim0}, {EMPTYVAL, Dim1}) for which we store nothing
     // in storage as they can be reconstructed in the type handler on the read path.
-    if (data != end || fields.size() > 0) {
+    if (data != end || !fields.empty()) {
         auto index_field = fields.at(0u);
         decode_index_field(frame, index_field, data, begin, end, context, encoding_version);
 
@@ -414,15 +383,15 @@ void decode_into_frame_dynamic(
     auto &hdr = seg.header();
     auto index_fieldcount = get_index_field_count(frame);
     data = skip_heading_fields(hdr, data);
-    context.set_descriptor(StreamDescriptor{std::make_shared<StreamDescriptor::Proto>(std::move(*hdr.mutable_stream_descriptor())), seg.fields_ptr()});
+    context.set_descriptor(seg.descriptor());
     context.set_compacted(hdr.compacted());
-    const EncodingVersion encdoing_version = EncodingVersion(hdr.encoding_version());
-    const bool has_magic_numbers = encdoing_version == EncodingVersion::V2;
+    const auto encoding_version = hdr.encoding_version();
+    const bool has_magic_numbers = encoding_version == EncodingVersion::V2;
 
     if (data != end) {
-        EncodedFieldCollection fields(seg);
+        const auto& fields = hdr.body_fields();
         auto index_field = fields.at(0u);
-        decode_index_field(frame, index_field, data, begin, end, context, encdoing_version);
+        decode_index_field(frame, index_field, data, begin, end, context, encoding_version);
 
         auto field_count = context.slice_and_key().slice_.col_range.diff() + index_fieldcount;
         for (auto field_col = index_fieldcount; field_col < field_count; ++field_col) {
@@ -445,11 +414,11 @@ void decode_into_frame_dynamic(
             util::check(data != end,
                         "Reached end of input block with {} fields to decode",
                         field_count - field_col);
-            decode_or_expand(data, buffer.data() + m.offset_bytes_, encoded_field, m.source_type_desc_, m.dest_bytes_, buffers, encdoing_version);
+            decode_or_expand(data, buffer.data() + m.offset_bytes_, encoded_field, m.source_type_desc_, m.dest_bytes_, buffers, encoding_version);
             if (!trivially_compatible_types(m.source_type_desc_, m.dest_type_desc_)) {
-                m.dest_type_desc_.visit_tag([&buffer, &m, &data, encoded_field, buffers, encdoing_version] (auto dest_desc_tag) {
+                m.dest_type_desc_.visit_tag([&buffer, &m, buffers] (auto dest_desc_tag) {
                     using DestinationType =  typename decltype(dest_desc_tag)::DataTypeTag::raw_type;
-                    m.source_type_desc_.visit_tag([&buffer, &m, &data, &encoded_field, &buffers, encdoing_version] (auto src_desc_tag ) {
+                    m.source_type_desc_.visit_tag([&buffer, &m] (auto src_desc_tag ) {
                         using SourceType =  typename decltype(src_desc_tag)::DataTypeTag::raw_type;
                         if constexpr(std::is_arithmetic_v<SourceType> && std::is_arithmetic_v<DestinationType>) {
                             // If the source and destination types are different, then sizeof(destination type) >= sizeof(source type)
@@ -604,7 +573,6 @@ class EmptyDynamicStringReducer {
 protected:
     Column& column_;
     SegmentInMemory frame_;
-    const Field& frame_field_;
     size_t row_ ;
     ChunkedBuffer& src_buffer_;
     size_t column_width_;
@@ -618,7 +586,7 @@ public:
     EmptyDynamicStringReducer(
         Column& column,
         SegmentInMemory frame,
-        const Field& frame_field,
+        const Field&,
         size_t alloc_width,
         std::shared_ptr<LockType> spinlock) :
         column_(column),

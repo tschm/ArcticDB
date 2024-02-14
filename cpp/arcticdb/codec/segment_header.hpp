@@ -130,6 +130,33 @@ public:
         return get_field<FieldOffset::COLUMN>();
     }
 
+    template <FieldOffset field_offset>
+
+    [[nodiscard]] EncodedFieldImpl& get_mutable_field() {
+        util::check(has_field(field_offset), "Field {} has not been set", offset_name(field_offset));
+        return header_fields_.at(offset_[as_offset(field_offset)]);
+    }
+
+    [[nodiscard]] EncodedFieldImpl& mutable_metadata_field() {
+        return get_mutable_field<FieldOffset::METADATA>();
+    }
+
+    [[nodiscard]] EncodedFieldImpl& mutable_string_pool_field() {
+        return get_mutable_field<FieldOffset::STRING_POOL>();
+    }
+
+    [[nodiscard]] EncodedFieldImpl& mutable_descriptor_field() {
+        return get_mutable_field<FieldOffset::DESCRIPTOR>();
+    }
+
+    [[nodiscard]] EncodedFieldImpl& mutable_index_descriptor_field() {
+        return get_mutable_field<FieldOffset::INDEX>();
+    }
+
+    [[nodiscard]] EncodedFieldImpl& mutable_column_fields() {
+        return get_mutable_field<FieldOffset::COLUMN>();
+    }
+
     [[nodiscard]] EncodingVersion encoding_version() const {
         return data_.encoding_version_;
     }

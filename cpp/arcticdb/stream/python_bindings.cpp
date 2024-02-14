@@ -67,9 +67,9 @@ void register_types(py::module &m) {
     );
 
     py::enum_<IndexDescriptor::Type>(m, "IndexKind")
-        .value("TIMESTAMP", IndexDescriptor::TIMESTAMP)
-        .value("STRING", IndexDescriptor::STRING)
-        .value("ROWCOUNT", IndexDescriptor::ROWCOUNT);
+        .value("TIMESTAMP", IndexDescriptor::Type::TIMESTAMP)
+        .value("STRING", IndexDescriptor::Type::STRING)
+        .value("ROWCOUNT", IndexDescriptor::Type::ROWCOUNT);
 
     python_util::add_repr(py::class_<IndexDescriptor>(m, "IndexDescriptor")
                               .def(py::init<std::size_t, IndexDescriptor::Type>())
