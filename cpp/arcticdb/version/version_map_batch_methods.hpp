@@ -247,7 +247,7 @@ inline std::shared_ptr<std::unordered_map<StreamId, AtomKey>> batch_get_specific
 
     if (!tombstoned_vers->empty()) {
         const auto snap_map = get_master_snapshots_map(store);
-        submit_cpu_task_for_range(*tombstoned_vers, [&snap_map, &sym_versions, output, output_mutex](const auto& tombstoned_ver) mutable {
+        submit_cpu_task_for_range(*tombstoned_vers, [&snap_map, &sym_versions, output, output_mutex](const auto& tombstoned_ver) {
             return async::submit_cpu_task(IterationTask{[](const std::pair<StreamId, AtomKey>& tombstoned_ver, const MasterSnapshotMap& snap_map, 
                         const std::map<StreamId, VersionId>& sym_versions, auto output, auto output_mutex) {
                 auto cit = snap_map.find(tombstoned_ver.first);
