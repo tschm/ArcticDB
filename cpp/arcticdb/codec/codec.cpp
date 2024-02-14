@@ -262,9 +262,6 @@ std::pair<std::optional<google::protobuf::Any>, StreamDescriptor> decode_metadat
 
     util::check(data != nullptr, "Got null data ptr from segment");
     const uint8_t* begin = data;
-    const uint8_t* end = data + segment.buffer().bytes();
-
-    util::check(data != nullptr, "Got null data ptr from segment");
     if(EncodingVersion(hdr.encoding_version()) == EncodingVersion::V2)
         util::check_magic<MetadataMagic>(data);
 
@@ -272,13 +269,7 @@ std::pair<std::optional<google::protobuf::Any>, StreamDescriptor> decode_metadat
     if(EncodingVersion(hdr.encoding_version()) == EncodingVersion::V2)
         util::check_magic<DescriptorMagic>(data);
 
-    auto maybe_fields = decode_descriptor_fields(hdr, data, begin, end);
-    //TODO these are already decoded on the segment?
-    if(!maybe_fields) {
-        auto old_fields = std::make_shared<FieldCollection>(fields_from_proto(hdr.stream_descriptor()));
-        return std::make_pair(std::move(maybe_any),StreamDescriptor{std::make_shared<StreamDescriptor::Proto>(std::move(*hdr.mutable_stream_descriptor())), old_fields});
-    }
-    return std::make_pair(std::move(maybe_any),StreamDescriptor{std::make_shared<StreamDescriptor::Proto>(std::move(*hdr.mutable_stream_descriptor())), std::make_shared<FieldCollection>(std::move(*maybe_fields))});
+    return std::make_pair(std::move(maybe_any), segment.descriptor());
 }
 
 void decode_string_pool( const SegmentHeader& hdr,
@@ -369,15 +360,15 @@ void decode_v1(const Segment& segment,
 
     if (data!=end) {
         const auto fields_size = desc.fields().size();
-        util::check(fields_size == segment.fields_size(), "Mismatch between descriptor and header field size: {} != {}", fields_size, hdr.fields_size());
+        const auto& column_fields = hdr.body_fields();
+        util::check(fields_size == segment.fields_size(), "Mismatch between descriptor and header field size: {} != {}", fields_size, column_fields.size());
         const auto start_row = res.row_count();
-
-        const auto seg_row_count = fields_size ? ssize_t(hdr.fields(0).ndarray().items_count()) : 0LL;
+        const auto seg_row_count = fields_size ? ssize_t(column_fields.at(0).ndarray().items_count()) : 0LL;
         res.init_column_map();
 
-        for (std::size_t i = 0; i < static_cast<size_t>(fields_size); ++i) {
-            const auto& field = hdr.fields(static_cast<int>(i));
-            const auto& field_name = desc.fields(static_cast<int>(i)).name();
+        for (std::size_t i = 0; i < fields_size; ++i) {
+            const auto& field = column_fields.at(i);
+            const auto& field_name = desc.fields(i).name();
             util::check(data!=end, "Reached end of input block with {} fields to decode", fields_size-i);
             if(auto col_index = res.column_index(field_name)) {
                 auto& col = res.column(static_cast<position_t>(*col_index));
@@ -403,18 +394,14 @@ void decode_into_memory_segment(
     if(EncodingVersion(segment.header().encoding_version()) == EncodingVersion::V2)
         decode_v2(segment, hdr, res, desc);
     else
-        decode_v1(segment, hdr, res, desc.mutable_proto());
+        decode_v1(segment, hdr, res, desc);
 }
 
 SegmentInMemory decode_segment(Segment&& s) {
     auto segment = std::move(s);
     auto &hdr = segment.header();
-    ARCTICDB_TRACE(log::codec(), "Decoding descriptor: {}", segment.header().stream_descriptor().DebugString());
-    StreamDescriptor descriptor(std::make_shared<StreamDescriptor::Proto>(std::move(*segment.header().mutable_stream_descriptor())), segment.fields_ptr());
-
-    if(EncodingVersion(segment.header().encoding_version()) != EncodingVersion::V2)
-        descriptor.fields() = field_collection_from_proto(std::move(*descriptor.mutable_proto().mutable_fields()));
-
+    ARCTICDB_TRACE(log::codec(), "Decoding descriptor: {}", segment.header().stream_descriptor());
+    auto descriptor = segment.descriptor();
     descriptor.fields().regenerate_offsets();
     ARCTICDB_TRACE(log::codec(), "Creating segment");
     SegmentInMemory res(std::move(descriptor));
@@ -424,7 +411,7 @@ SegmentInMemory decode_segment(Segment&& s) {
     return res;
 }
 
-static void hash_field(const EncodedField &field, HashAccum &accum) {
+static void hash_field(const EncodedFieldImpl &field, HashAccum &accum) {
     auto &n = field.ndarray();
     for(auto i = 0; i < n.shapes_size(); ++i) {
         auto v = n.shapes(i).hash();
@@ -437,18 +424,15 @@ static void hash_field(const EncodedField &field, HashAccum &accum) {
     }
 }
 
-// TODO this should happen as the fields are compressed
 HashedValue hash_segment_header(const SegmentHeader &hdr) {
     HashAccum accum;
     if (hdr.has_metadata_field()) {
         hash_field(hdr.metadata_field(), accum);
     }
-    for (int i = 0; i < hdr.fields_size(); ++i) {
-        hash_field(hdr.fields(i), accum);
-    }
     if(hdr.has_string_pool_field()) {
         hash_field(hdr.string_pool_field(), accum);
     }
+
     return accum.digest();
 }
 

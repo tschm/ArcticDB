@@ -22,11 +22,28 @@ std::pair<const uint8_t*, const uint8_t*> get_segment_begin_end(
     const SegmentHeader& hdr);
 
 
-
+constexpr std::string_view codec_type_to_string(Codec codec) {
+    switch(codec) {
+    case Codec::LZ4:
+        return "LZ4";
+    case Codec::ZSTD:
+        return "ZSTD";
+    case Codec::PFOR:
+        return "PFOR";
+    case Codec::PASS:
+        return "PASS";
+    default:
+        return "Unknown";
+    }
+}
 
 struct BlockCodecImpl : public BlockCodec {
     uint8_t* data() {
         return &data_[0];
+    }
+
+    Codec codec_type() const {
+        return codec_;
     }
 
     [[nodiscard]] const uint8_t* data() const {
@@ -79,16 +96,6 @@ struct BlockCodecImpl : public BlockCodec {
     [[nodiscard]] const PassthroughCodec& passthrough() const {
         util::check(codec_ == Codec::PASS, "Not a passthrough codec");
         return *reinterpret_cast<const PassthroughCodec*>(data());
-    }
-
-    [[nodiscard]] arcticdb::proto::encoding::VariantCodec::CodecCase codec_case() const { //TODO move
-        switch (codec_) {
-        case Codec::ZSTD:return arcticdb::proto::encoding::VariantCodec::kZstd;
-        case Codec::LZ4:return arcticdb::proto::encoding::VariantCodec::kLz4;
-        case Codec::PFOR:return arcticdb::proto::encoding::VariantCodec::kTp4;
-        case Codec::PASS:return arcticdb::proto::encoding::VariantCodec::kPassthrough;
-        default:util::raise_rte("Unknown codec");
-        }
     }
 
     template<class CodecType>
@@ -350,3 +357,30 @@ inline size_t encoded_field_bytes(const EncodedField &encoded_field) {
 
 
 } //namespace arcticc
+
+
+namespace fmt {
+template<>
+struct formatter<arcticdb::BlockCodecImpl> {
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext &ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(arcticdb::BlockCodecImpl codec, FormatContext &ctx) const {
+
+        return format_to(ctx.out(), "{}", arcticdb::codec_type_to_string(codec.codec_type()));
+    }
+};
+
+template<>
+struct formatter<arcticdb::EncodedFieldImpl> {
+    template<typename ParseContext>
+    constexpr auto parse(ParseContext &ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(const arcticdb::EncodedFieldImpl& field, FormatContext &ctx) const {
+        return format_to(ctx.out(), "{}", field.has_ndarray() ? "NDARRAY" : "DICT"); //TODO better formatting
+    }
+};
+
+} // namespace fmt

@@ -10,34 +10,17 @@
 
 namespace arcticdb {
 
-constexpr static uint16_t MAGIC_NUMBER = 0xFA57;
+void write_fixed_header(std::uint8_t *dst, const FixedHeader& hdr) {
+    ARCTICDB_DEBUG(log::codec(), "Writing header with size {}", header_bytes);
+    auto h = reinterpret_cast<FixedHeader *>(dst);
+    *h = hdr;
+}
 
-struct FixedHeader {
-    std::uint16_t magic_number;
-    std::uint16_t encoding_version;
-    std::uint32_t header_bytes;
-
-    void write(std::uint8_t *dst) const {
-        ARCTICDB_DEBUG(log::codec(), "Writing header with size {}", header_bytes);
-        auto h = reinterpret_cast<FixedHeader *>(dst);
-        *h = *this;
-    }
-
-    void write(std::ostream &dst){
-        dst.write(reinterpret_cast<char*>(this), sizeof(FixedHeader));
-    }
-};
-
-constexpr static std::size_t FIXED_HEADER_SIZE = sizeof(FixedHeader);
+void write_fixed_header(std::ostream &dst, const FixedHeader& hdr){
+    dst.write(reinterpret_cast<const char*>(&hdr), sizeof(FixedHeader));
+}
 
 class SegmentHeader {
-    struct HeaderData { ;
-        EncodingVersion encoding_version_ = EncodingVersion::V1;
-        std::array<bool, 5> optional_header_fields_ = {UNSET, UNSET,UNSET, UNSET, UNSET};
-        bool compacted_ = false;
-        uint64_t footer_offset_ = 0;
-    };
-
     HeaderData data_;
     EncodedFieldCollection header_fields_;
     EncodedFieldCollection body_fields_;
@@ -94,7 +77,7 @@ public:
         return data_.optional_header_fields_[as_offset(field_offset)];
     }
 
-    [[nodiscard]] constexpr std::string_view offset_name(FieldOffset field_offset) const {
+    [[nodiscard]] static constexpr std::string_view offset_name(FieldOffset field_offset) {
         return offset_names_[as_offset(field_offset)];
     }
 
@@ -123,28 +106,28 @@ public:
     }
 
     template <FieldOffset field_offset>
-    [[nodiscard]] const EncodedField& get_field() const {
+    [[nodiscard]] const EncodedFieldImpl& get_field() const {
         util::check(has_field(field_offset), "Field {} has not been set", offset_name(field_offset));
         return header_fields_.at(offset_[as_offset(field_offset)]);
     }
 
-    [[nodiscard]] const EncodedField& metadata_field() const {
+    [[nodiscard]] const EncodedFieldImpl& metadata_field() const {
         return get_field<FieldOffset::METADATA>();
     }
 
-    [[nodiscard]] const EncodedField& string_pool_field() const {
-        return get_field<FieldOffset::METADATA>();
+    [[nodiscard]] const EncodedFieldImpl& string_pool_field() const {
+        return get_field<FieldOffset::STRING_POOL>();
     }
-    [[nodiscard]] const EncodedField& descriptor_field() const {
-        return get_field<FieldOffset::METADATA>();
-    }
-
-    [[nodiscard]] const EncodedField& index_descriptor_field() const {
-        return get_field<FieldOffset::METADATA>();
+    [[nodiscard]] const EncodedFieldImpl& descriptor_field() const {
+        return get_field<FieldOffset::DESCRIPTOR>();
     }
 
-    [[nodiscard]] const EncodedField& column_fields() const {
-        return get_field<FieldOffset::METADATA>();
+    [[nodiscard]] const EncodedFieldImpl& index_descriptor_field() const {
+        return get_field<FieldOffset::INDEX>();
+    }
+
+    [[nodiscard]] const EncodedFieldImpl& column_fields() const {
+        return get_field<FieldOffset::COLUMN>();
     }
 
     [[nodiscard]] EncodingVersion encoding_version() const {
@@ -197,7 +180,7 @@ public:
         const auto field_size = calc_encoded_field_buffer_size(field);
         buffer.ensure<uint8_t>(field_size);
         auto* data = buffer.data();
-        encoded_field_from_proto(field, *reinterpret_cast<EncodedField*>(data));
+        encoded_field_from_proto(field, *reinterpret_cast<EncodedFieldImpl*>(data));
     }
 
     void deserialize_from_proto(const arcticdb::proto::encoding::SegmentHeader& header) {
@@ -237,6 +220,10 @@ public:
            }
        }
 
+    }
+
+    const EncodedFieldCollection& body_fields() const {
+        return body_fields_;
     }
 
     void set_body_fields(EncodedFieldCollection&& body_fields) {

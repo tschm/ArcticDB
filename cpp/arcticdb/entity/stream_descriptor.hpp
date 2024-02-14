@@ -8,47 +8,44 @@
 #pragma once
 
 #include <arcticdb/entity/field_collection.hpp>
+#include <arcticdb/memory_layout.hpp>
 #include <folly/gen/Base.h>
 
 namespace arcticdb::entity {
-struct StreamDescriptorData {
-    SortedValue sorted_ = SortedValue::UNKNOWN;
-    uint64_t compressed_bytes_ = 0UL;
-    uint64_t uncompressed_bytes_ = 0UL;
-    StreamId stream_id_;
-    IndexDescriptor index_ = IndexDescriptor{};
 
-    StreamDescriptorData() = default;
 
-    ARCTICDB_MOVE_COPY_DEFAULT(StreamDescriptorData)
+struct StreamDescriptorDataImpl : public StreamDescriptorData {
+    StreamDescriptorDataImpl() = default;
 
-    [[nodiscard]] StreamDescriptorData clone() const {
+    ARCTICDB_MOVE_COPY_DEFAULT(StreamDescriptorDataImpl)
+
+    [[nodiscard]] StreamDescriptorDataImpl clone() const {
         return *this;
     }
 };
 
-bool operator==(const StreamDescriptorData& left, const StreamDescriptorData& right) {
+bool operator==(const StreamDescriptorDataImpl& left, const StreamDescriptorDataImpl& right) {
     return left.stream_id_ == right.stream_id_ && left.index_ == right.index_;
 }
 
-bool operator!=(const StreamDescriptorData& left, const StreamDescriptorData& right) {
+bool operator!=(const StreamDescriptorDataImpl& left, const StreamDescriptorDataImpl& right) {
     return !(left == right);
 }
 
 struct StreamDescriptor {
-    std::shared_ptr<StreamDescriptorData> data_ = std::make_shared<StreamDescriptorData>();
+    std::shared_ptr<StreamDescriptorDataImpl> data_ = std::make_shared<StreamDescriptorDataImpl>();
     std::shared_ptr<FieldCollection> fields_ = std::make_shared<FieldCollection>();
 
     StreamDescriptor() = default;
     ~StreamDescriptor() = default;
 
-    StreamDescriptor(std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
+    StreamDescriptor(std::shared_ptr<StreamDescriptorDataImpl> data, std::shared_ptr<FieldCollection> fields) :
             data_(std::move(data)),
             fields_(std::move(fields)) {
 
     }
 
-    [[nodiscard]] const StreamDescriptorData& data() const  {
+    [[nodiscard]] const StreamDescriptorDataImpl& data() const  {
         return *data_;
     }
 
@@ -140,7 +137,7 @@ struct StreamDescriptor {
     }
 
     [[nodiscard]] StreamDescriptor clone() const {
-        return StreamDescriptor{std::make_shared<StreamDescriptorData>(data_->clone()), std::make_shared<FieldCollection>(fields_->clone())};
+        return StreamDescriptor{std::make_shared<StreamDescriptorDataImpl>(data_->clone()), std::make_shared<FieldCollection>(fields_->clone())};
     };
 
     [[nodiscard]] const FieldCollection& fields() const {

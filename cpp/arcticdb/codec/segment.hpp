@@ -58,19 +58,19 @@ class Segment {
   public:
     Segment() = default;
 
-    Segment(SegmentHeader&& header, std::shared_ptr<Buffer> buffer, std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
+    Segment(SegmentHeader&& header, std::shared_ptr<Buffer> buffer, std::shared_ptr<StreamDescriptorDataImpl> data, std::shared_ptr<FieldCollection> fields) :
         header_(std::move(header)),
         buffer_(std::move(buffer)),
         desc_(std::move(data), std::move(fields)){
     }
 
-    Segment(SegmentHeader&& header, BufferView &&buffer, std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
+    Segment(SegmentHeader&& header, BufferView buffer, std::shared_ptr<StreamDescriptorDataImpl> data, std::shared_ptr<FieldCollection> fields) :
         header_(std::move(header)),
-        buffer_(std::move(buffer)),
+        buffer_(buffer),
         desc_(std::move(data), std::move(fields)) {
     }
 
-    Segment(SegmentHeader&& header, VariantBuffer &&buffer, std::shared_ptr<StreamDescriptorData> data, std::shared_ptr<FieldCollection> fields) :
+    Segment(SegmentHeader&& header, VariantBuffer &&buffer, std::shared_ptr<StreamDescriptorDataImpl> data, std::shared_ptr<FieldCollection> fields) :
         header_(std::move(header)),
         buffer_(std::move(buffer)),
         desc_(std::move(data), std::move(fields)) {
@@ -175,6 +175,10 @@ class Segment {
 
     [[nodiscard]] const std::any& keepalive() const  {
         return keepalive_;
+    }
+
+    const StreamDescriptor& descriptor() const {
+        return desc_;
     }
 
   private:

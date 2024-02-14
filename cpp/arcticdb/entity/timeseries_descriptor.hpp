@@ -17,7 +17,7 @@ namespace arcticdb {
 struct TimeseriesDescriptor {
   using Proto = arcticdb::proto::descriptors::TimeSeriesDescriptor;
 
-  std::shared_ptr<StreamDescriptorData> data_;
+  std::shared_ptr<StreamDescriptorDataImpl> data_;
   std::shared_ptr<Proto> proto_ = std::make_shared<Proto>();
   std::shared_ptr<FieldCollection> fields_ = std::make_shared<FieldCollection>();
   TimeseriesDescriptor() = default;
@@ -41,7 +41,7 @@ struct TimeseriesDescriptor {
 
   void set_stream_descriptor(const StreamDescriptor& desc) {
       fields_ = std::make_shared<FieldCollection>(desc.fields().clone());
-      data_ = std::make_shared<StreamDescriptorData>(desc.data().clone());
+      data_ = std::make_shared<StreamDescriptorDataImpl>(desc.data().clone());
       proto_ = std::make_shared<Proto>();
       auto stream_desc = copy_stream_descriptor_to_proto(desc);
       proto_->mutable_stream_descriptor()->CopyFrom(stream_desc);

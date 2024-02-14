@@ -15,8 +15,10 @@ enum class Codec : uint16_t {
     PFOR,
     LZ4,
     PASS,
+    RLE,
     FSST,
-    GORILLA_RLE
+    GORILLA_RLE,
+    CONSTANT
 };
 
 struct ZstdCodec {
@@ -71,20 +73,19 @@ struct Block {
     Block() = default;
 };
 
+enum class EncodedFieldType : uint8_t {
+    UNKNOWN,
+    NDARRAY,
+    DICTIONARY
+};
+
+enum class BitmapFormat : uint8_t {
+    UNKNOWN,
+    DENSE,
+    BITMAGIC,
+    ROARING
+};
 struct EncodedField {
-    enum class EncodedFieldType : uint8_t {
-        UNKNOWN,
-        NDARRAY,
-        DICTIONARY
-    };
-
-    enum class BitmapFormat : uint8_t {
-        UNKNOWN,
-        DENSE,
-        BITMAGIC,
-        ROARING
-    };
-
     EncodedFieldType type_ = EncodedFieldType::UNKNOWN;
     uint8_t shapes_count_ = 0u;
     uint16_t values_count_ = 0u;
@@ -94,6 +95,39 @@ struct EncodedField {
     std::array<Block, 1> blocks_;
 };
 
+
+enum class EncodingVersion : uint16_t {
+    V1 = 0,
+    V2 = 1,
+    COUNT = 2
+};
+
+
+constexpr static uint16_t MAGIC_NUMBER = 0xFA57;
+
+struct FixedHeader {
+    std::uint16_t magic_number;
+    std::uint16_t encoding_version;
+    std::uint32_t header_bytes;
+};
+
+constexpr static std::size_t FIXED_HEADER_SIZE = sizeof(FixedHeader);
+constexpr static bool UNSET = false;
+
+struct HeaderData { ;
+    EncodingVersion encoding_version_ = EncodingVersion::V1;
+    std::array<bool, 5> optional_header_fields_ = {UNSET, UNSET,UNSET, UNSET, UNSET};
+    bool compacted_ = false;
+    uint64_t footer_offset_ = 0;
+};
+
+struct StreamDescriptorData {
+    SortedValue sorted_ = SortedValue::UNKNOWN;
+    uint64_t compressed_bytes_ = 0UL;
+    uint64_t uncompressed_bytes_ = 0UL;
+    StreamId stream_id_;
+    IndexDescriptor index_ = IndexDescriptor{};
+};
 
 #pragma pack(pop)
 }
