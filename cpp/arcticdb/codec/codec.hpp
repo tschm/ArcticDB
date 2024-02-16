@@ -26,7 +26,7 @@ Segment encode_dispatch(
     const arcticdb::proto::encoding::VariantCodec &codec_opts,
     EncodingVersion encoding_version);
 
-Buffer decode_encoded_fields(
+EncodedFieldCollection decode_encoded_fields(
     const SegmentHeader& hdr,
     const uint8_t* data,
     const uint8_t* begin ARCTICDB_UNUSED);

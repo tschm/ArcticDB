@@ -111,13 +111,22 @@ struct FixedHeader {
 };
 
 constexpr static std::size_t FIXED_HEADER_SIZE = sizeof(FixedHeader);
-constexpr static bool UNSET = false;
+
+enum class HeaderFlag : uint8_t {
+    COMPACTED,
+};
+
+struct FieldBuffer {
+    mutable uint32_t fields_bytes_ = 0U;
+    mutable uint32_t offset_bytes_ = 0U;
+};
 
 struct HeaderData { ;
     EncodingVersion encoding_version_ = EncodingVersion::V1;
-    std::array<bool, 5> optional_header_fields_ = {UNSET, UNSET,UNSET, UNSET, UNSET};
-    bool compacted_ = false;
-    uint64_t footer_offset_ = 0;
+    uint16_t fields_ = 0U;
+    uint8_t flags_ = 0U;
+    uint64_t footer_offset_ = 0U;
+    FieldBuffer field_buffer_;
 };
 
 enum class SortedValue : uint8_t {
@@ -139,6 +148,37 @@ struct IndexData {
     uint32_t field_count_ = 0U;
 };
 
+enum class SchemaType : uint8_t {
+    STATIC,
+    DYNAMIC
+};
+
+struct IndexDescriptor {
+    enum class Type : int32_t {
+        UNKNOWN = 0,
+        ROWCOUNT = 82,
+        STRING = 83,
+        TIMESTAMP = 84
+    };
+
+    IndexDescriptor() = default;
+
+    IndexDescriptor(Type type, uint32_t field_count) :
+        type_(type),
+        field_count_(field_count) {
+    }
+
+    Type type_ = Type::UNKNOWN;
+    uint32_t field_count_ = 0U;
+};
+
+struct FrameDescriptor {
+    uint64_t total_rows_;
+    SortedValue sorted_ = SortedValue::UNKNOWN;
+    uint64_t compressed_bytes_ = 0UL;
+    uint64_t uncompressed_bytes_ = 0UL;
+    IndexDescriptor index_;
+};
 
 
 #pragma pack(pop)

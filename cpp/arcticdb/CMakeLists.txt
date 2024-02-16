@@ -443,7 +443,7 @@ set(arcticdb_srcs
         version/version_utils.cpp
         version/symbol_list.cpp
         version/version_map_batch_methods.cpp
-        codec/segment_header.hpp codec/protobuf_encoding.hpp codec/encoded_field.cpp codec/encoding_version.hpp memory_layout.hpp)
+        codec/segment_header.hpp codec/protobuf_mappings.hpp codec/encoded_field.cpp codec/encoding_version.hpp memory_layout.hpp codec/protobuf_mappings.cpp entity/protobuf_mappings.cpp)
 
 if(${ARCTICDB_INCLUDE_ROCKSDB})
     list (APPEND arcticdb_srcs

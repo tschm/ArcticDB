@@ -659,11 +659,6 @@ SegmentInMemory write_entries_to_symbol_segment(
 
 SegmentInMemory create_empty_segment(const StreamId& stream_id) {
     SegmentInMemory output{StreamDescriptor{stream_id}};
-    google::protobuf::Any any = {};
-    arcticdb::proto::descriptors::SymbolListDescriptor metadata;
-    metadata.set_enabled(true);
-    any.PackFrom(metadata);
-    output.set_metadata(std::move(any));
     return output;
 }
 

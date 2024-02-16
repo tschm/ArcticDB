@@ -3,21 +3,33 @@
 #include <arcticdb/codec/encoded_field.hpp>
 #include <arcticdb/codec/encoded_field_collection.hpp>
 #include <arcticdb/codec/codec.hpp>
-#include <arcticdb/codec/protobuf_encoding.hpp>
-#include <folly/container/Enumerate.h>
 #include <arcticdb/util/cursored_buffer.hpp>
 #include <arcticdb/codec/encoding_version.hpp>
 
+
 namespace arcticdb {
+
+enum class FieldOffset : uint8_t {
+    METADATA,
+    STRING_POOL,
+    DESCRIPTOR,
+    INDEX,
+    COLUMN,
+    COUNT
+};
+
+static constexpr std::array<std::string_view, 5> offset_names_ = {
+    "METADATA",
+    "STRING_POOL",
+    "DESCRIPTOR",
+    "INDEX",
+    "COLUMN"
+};
 
 void write_fixed_header(std::uint8_t *dst, const FixedHeader& hdr) {
     ARCTICDB_DEBUG(log::codec(), "Writing header with size {}", header_bytes);
-    auto h = reinterpret_cast<FixedHeader *>(dst);
+    auto h = reinterpret_cast<FixedHeader*>(dst);
     *h = hdr;
-}
-
-void write_fixed_header(std::ostream &dst, const FixedHeader& hdr){
-    dst.write(reinterpret_cast<const char*>(&hdr), sizeof(FixedHeader));
 }
 
 class SegmentHeader {
@@ -25,24 +37,6 @@ class SegmentHeader {
     EncodedFieldCollection header_fields_;
     EncodedFieldCollection body_fields_;
     std::array<uint32_t, 5> offset_ = {};
-
-    enum class FieldOffset : uint8_t {
-        METADATA,
-        STRING_POOL,
-        DESCRIPTOR,
-        INDEX,
-        COLUMN
-    };
-
-    static constexpr std::array<std::string_view, 5> offset_names_ = {
-        "METADATA",
-        "STRING_POOL",
-        "DESCRIPTOR",
-        "INDEX",
-        "COLUMN"
-    };
-
-    static constexpr bool UNSET = false;
 
 public:
     explicit SegmentHeader(EncodingVersion encoding_version) {
@@ -57,32 +51,50 @@ public:
         return header_fields_.empty();
     }
 
-    [[nodiscard]] bool compacted() const {
-        return data_.compacted_;
+    static constexpr uint8_t flag_mask(HeaderFlag flag) {
+        return 1 << static_cast<uint8_t>(flag);
     }
 
-    void set_compacted(bool compacted) {
-        data_.compacted_ = compacted;
+    void set_offset(FieldOffset field, uint32_t offset) {
+        offset_[as_pos(field)] = offset;
+    }
+    
+    template<HeaderFlag flag>
+    void set_flag(bool value) {
+       constexpr auto mask = flag_mask(flag);
+       if(value)
+           data_.flags_ |= mask;
+       else
+           data_.flags_ &= ~mask;
+    }
+
+    template<HeaderFlag flag>
+    [[nodiscard]] bool get_flag() const {
+        return data_.flags_ & flag_mask(flag);
+    }
+
+    [[nodiscard]] bool compacted() const {
+        return get_flag<HeaderFlag::COMPACTED>();
+    }
+
+    void set_compacted(bool value) {
+         set_flag<HeaderFlag::COMPACTED>(value);
     }
 
     [[nodiscard]] size_t bytes() const {
-        return sizeof(HeaderData) + header_fields_.bytes();
+        return sizeof(HeaderData) + header_fields_.data_bytes() + header_fields_.offset_bytes();
     }
 
-    [[nodiscard]] static constexpr size_t as_offset(FieldOffset field_offset) {
+    [[nodiscard]] static constexpr size_t as_pos(FieldOffset field_offset) {
         return static_cast<size_t>(field_offset);
     }
 
     [[nodiscard]] int32_t get_offset(FieldOffset field_offset) const {
-        return data_.optional_header_fields_[as_offset(field_offset)];
+        return offset_[as_pos(field_offset)];
     }
 
     [[nodiscard]] static constexpr std::string_view offset_name(FieldOffset field_offset) {
-        return offset_names_[as_offset(field_offset)];
-    }
-
-    [[nodiscard]] bool has_field(FieldOffset field_offset) const {
-        return get_offset(field_offset) != UNSET;
+        return offset_names_[as_pos(field_offset)];
     }
 
     [[nodiscard]] bool has_metadata_field() const {
@@ -108,7 +120,7 @@ public:
     template <FieldOffset field_offset>
     [[nodiscard]] const EncodedFieldImpl& get_field() const {
         util::check(has_field(field_offset), "Field {} has not been set", offset_name(field_offset));
-        return header_fields_.at(offset_[as_offset(field_offset)]);
+        return header_fields_.at(offset_[as_pos(field_offset)]);
     }
 
     [[nodiscard]] const EncodedFieldImpl& metadata_field() const {
@@ -131,10 +143,9 @@ public:
     }
 
     template <FieldOffset field_offset>
-
     [[nodiscard]] EncodedFieldImpl& get_mutable_field() {
         util::check(has_field(field_offset), "Field {} has not been set", offset_name(field_offset));
-        return header_fields_.at(offset_[as_offset(field_offset)]);
+        return header_fields_.at(offset_[as_pos(field_offset)]);
     }
 
     [[nodiscard]] EncodedFieldImpl& mutable_metadata_field() {
@@ -161,6 +172,10 @@ public:
         return data_.encoding_version_;
     }
 
+    void set_encoding_version(EncodingVersion encoding_version) {
+        data_.encoding_version_ = encoding_version;
+    }
+
     void set_footer_offset(uint64_t offset) {
         data_.footer_offset_ = offset;
     }
@@ -169,87 +184,47 @@ public:
         return data_.footer_offset_;
     }
 
-    void serialize_to_proto(uint8_t* dst) const {
-        arcticdb::proto::encoding::SegmentHeader segment_header;
-        if(has_metadata_field())
-            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
-
-        if(has_string_pool_field())
-            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
-
-        if(has_descriptor_field())
-            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
-
-        if(has_index_descriptor_field())
-            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
-
-        if(has_column_fields())
-            proto_from_encoded_field(metadata_field(), *segment_header.mutable_metadata_field());
-
-        const auto hdr_size = segment_header.ByteSizeLong();
-        google::protobuf::io::ArrayOutputStream aos(dst + FIXED_HEADER_SIZE, static_cast<int>(hdr_size));
-        segment_header.SerializeToZeroCopyStream(&aos);
-    }
-
     void serialize_to_bytes(uint8_t* dst) const {
+        data_.field_buffer_.fields_bytes_ = static_cast<uint32_t>(header_fields_.data_bytes());
+        data_.field_buffer_.offset_bytes_ = static_cast<uint32_t>(header_fields_.offset_bytes());
         memcpy(dst, &data_, sizeof(HeaderData));
         dst += sizeof(HeaderData);
-        memcpy(dst, header_fields_.data(), header_fields_.bytes());
+        memcpy(dst, header_fields_.data_buffer(), header_fields_.data_bytes());
+        memcpy(dst, header_fields_.offsets_buffer(), header_fields_.offset_bytes());
     }
 
-    void deserialize_proto_field(
-            FieldOffset field_offset,
-            CursoredBuffer<Buffer>& buffer,
-            const arcticdb::proto::encoding::EncodedField& field,
-            size_t& pos) {
-        data_.optional_header_fields_[as_offset(field_offset)] = true;
-        offset_[as_offset(field_offset)] = pos++;
-        const auto field_size = calc_encoded_field_buffer_size(field);
-        buffer.ensure<uint8_t>(field_size);
-        auto* data = buffer.data();
-        encoded_field_from_proto(field, *reinterpret_cast<EncodedFieldImpl*>(data));
+    static constexpr uint16_t field_mask(FieldOffset field_offset) {
+       return static_cast<uint16_t>(field_offset) << 1U;
     }
 
-    void deserialize_from_proto(const arcticdb::proto::encoding::SegmentHeader& header) {
-        data_.encoding_version_ = EncodingVersion(header.encoding_version());
-        data_.compacted_ = header.compacted();
-
-        auto pos = 0UL;
-        CursoredBuffer<Buffer> buffer;
-        if(header.has_metadata_field())
-            deserialize_proto_field(FieldOffset::METADATA, buffer, header.descriptor_field(), pos);
-
-        if(header.has_string_pool_field())
-            deserialize_proto_field(FieldOffset::STRING_POOL, buffer, header.string_pool_field(), pos);
-
-        if(header.has_descriptor_field())
-            deserialize_proto_field(FieldOffset::DESCRIPTOR, buffer, header.descriptor_field(), pos);
-
-        if(header.has_index_descriptor_field())
-            deserialize_proto_field(FieldOffset::INDEX, buffer, header.index_descriptor_field(), pos);
-
-        if(header.has_column_fields())
-            deserialize_proto_field(FieldOffset::COLUMN, buffer, header.column_fields(), pos);
+    void set_field(FieldOffset field_offset) {
+        data_.fields_ |= field_mask(field_offset);
     }
 
-    void deserialize_from_bytes(const uint8_t* data, size_t header_size) {
+    [[nodiscard]] bool has_field(FieldOffset field_offset) const {
+        return data_.fields_ & field_mask(field_offset);
+    }
+
+    void deserialize_from_bytes(const uint8_t* data) {
        memcpy(&data_, data, sizeof(HeaderData));
        data += sizeof(HeaderData);
-       header_size -= sizeof(HeaderData);
-       Buffer buffer(header_size);
-       memcpy(buffer.data(), data, header_size);
-       header_fields_ = EncodedFieldCollection{std::move(buffer)};
+       ChunkedBuffer fields_buffer;
+       fields_buffer.add_external_block(data, data_.field_buffer_.fields_bytes_, 0UL);
+       data += data_.field_buffer_.fields_bytes_;
+       Buffer offsets_buffer{data_.field_buffer_.offset_bytes_};
+       memcpy(offsets_buffer.data(), data, data_.field_buffer_.offset_bytes_);
 
-       auto pos = 0U;
-       for(auto has_field : folly::enumerate(data_.optional_header_fields_)) {
-           if(*has_field) {
-               offset_[has_field.index] = pos++;
+       header_fields_ = EncodedFieldCollection{std::move(fields_buffer), std::move(offsets_buffer)};
+
+       auto count = 0U;
+       for(auto pos = 0U; pos < as_pos(FieldOffset::COUNT); ++pos) {
+           if(has_field(FieldOffset(pos))) {
+               offset_[pos] = header_fields_.get_offset(count++);
            }
        }
-
     }
 
-    const EncodedFieldCollection& body_fields() const {
+    [[nodiscard]] const EncodedFieldCollection& body_fields() const {
         return body_fields_;
     }
 
@@ -259,4 +234,4 @@ public:
 };
 
 
-}
+} //namespace arcticdb

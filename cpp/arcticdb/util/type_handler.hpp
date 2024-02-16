@@ -31,7 +31,7 @@ struct ITypeHandler {
         void handle_type(
             const uint8_t*& source,
             uint8_t* dest,
-            const VariantField& encoded_field_info,
+            const EncodedFieldImpl& encoded_field_info,
             const entity::TypeDescriptor& type_descriptor,
             size_t dest_bytes,
             std::shared_ptr<BufferHolder> buffers,

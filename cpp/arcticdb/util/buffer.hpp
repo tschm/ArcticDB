@@ -68,6 +68,10 @@ struct Buffer : public BaseBuffer<Buffer, true> {
         check_invariants();
     }
 
+    static auto presized(size_t size) {
+        return Buffer(size);
+    };
+
     Buffer &operator=(Buffer &&b) noexcept {
         deallocate();
         using std::swap;
@@ -168,8 +172,7 @@ struct Buffer : public BaseBuffer<Buffer, true> {
     }
 
     inline void ensure(size_t bytes) {
-        const size_t total_size = bytes + preamble_bytes_;
-        if(total_size > capacity_) {
+        if(const size_t total_size = bytes + preamble_bytes_; total_size > capacity_) {
             resize(total_size);
         } else {
             ARCTICDB_TRACE(log::version(), "Buffer {} has sufficient bytes for {}, ptr {} data {}, capacity {}",
@@ -307,7 +310,6 @@ public:
             return std::get<BufferView>(buffer_);
         }
     }
-
 
     [[nodiscard]] std::size_t bytes() const {
         std::size_t s = 0;

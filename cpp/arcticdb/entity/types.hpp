@@ -578,24 +578,15 @@ inline arcticdb::proto::descriptors::StreamDescriptor_FieldDescriptor field_prot
     return output;
 }
 
-struct IndexDescriptor {
-    enum class Type : int32_t {
-        UNKNOWN = 0,
-        ROWCOUNT = 82,
-        STRING = 83,
-        TIMESTAMP = 84
-    };
+struct IndexDescriptorImpl : public IndexDescriptor {
 
-    Type type_ = Type::UNKNOWN;
-    uint32_t field_count_ = 0U;
 
     using TypeChar = char;
 
-    IndexDescriptor() = default;
+    IndexDescriptorImpl() = default;
 
-    IndexDescriptor(uint32_t field_count, Type type) :
-        type_(type),
-        field_count_(field_count) {
+    IndexDescriptorImpl(uint32_t field_count, Type type) :
+        IndexDescriptor(type, field_count) {
     }
 
     [[nodiscard]] bool uninitialized() const {
@@ -618,29 +609,29 @@ struct IndexDescriptor {
         field_count_ = field_count;
     }
 
-    ARCTICDB_MOVE_COPY_DEFAULT(IndexDescriptor)
+    ARCTICDB_MOVE_COPY_DEFAULT(IndexDescriptorImpl)
 
-    friend bool operator==(const IndexDescriptor& left, const IndexDescriptor& right) {
+    friend bool operator==(const IndexDescriptorImpl& left, const IndexDescriptorImpl& right) {
         return left.type() == right.type() && left.field_count_ == right.field_count_;
     }
 };
 
-constexpr IndexDescriptor::TypeChar to_type_char(IndexDescriptor::Type type) {
+constexpr IndexDescriptorImpl::TypeChar to_type_char(IndexDescriptorImpl::Type type) {
     switch (type) {
-    case IndexDescriptor::Type::TIMESTAMP:return 'T';
-    case IndexDescriptor::Type::ROWCOUNT:return 'R';
-    case IndexDescriptor::Type::STRING:return 'S';
-    case IndexDescriptor::Type::UNKNOWN:return 'U';
+    case IndexDescriptorImpl::Type::TIMESTAMP:return 'T';
+    case IndexDescriptorImpl::Type::ROWCOUNT:return 'R';
+    case IndexDescriptorImpl::Type::STRING:return 'S';
+    case IndexDescriptorImpl::Type::UNKNOWN:return 'U';
     default:util::raise_rte("Unknown index type: {}", int(type));
     }
 }
 
-constexpr IndexDescriptor::Type from_type_char(IndexDescriptor::TypeChar type) {
+constexpr IndexDescriptorImpl::Type from_type_char(IndexDescriptorImpl::TypeChar type) {
     switch (type) {
-    case 'T': return IndexDescriptor::Type::TIMESTAMP;
-    case 'R': return IndexDescriptor::Type::ROWCOUNT;
-    case 'S': return IndexDescriptor::Type::STRING;
-    case 'U': return IndexDescriptor::Type::UNKNOWN;
+    case 'T': return IndexDescriptorImpl::Type::TIMESTAMP;
+    case 'R': return IndexDescriptorImpl::Type::ROWCOUNT;
+    case 'S': return IndexDescriptorImpl::Type::STRING;
+    case 'U': return IndexDescriptorImpl::Type::UNKNOWN;
     default:util::raise_rte("Unknown index type: {}", int(type));
     }
 }

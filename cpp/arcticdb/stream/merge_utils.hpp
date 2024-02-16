@@ -78,7 +78,7 @@ inline void merge_segments(
                 }
             }
         }
-        if (latest.row_count() && latest.descriptor().index().type() == IndexDescriptor::Type::TIMESTAMP) {
+        if (latest.row_count() && latest.descriptor().index().type() == IndexDescriptorImpl::Type::TIMESTAMP) {
             min_idx = std::min(min_idx, latest.begin()->begin()->value<timestamp>());
             max_idx = std::max(max_idx, (latest.end() - 1)->begin()->value<timestamp>());
         }

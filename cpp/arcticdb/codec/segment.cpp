@@ -115,7 +115,7 @@ EncodedFieldCollection deserialize_body_fields(const SegmentHeader& hdr, const u
 }
 
 
-std::tuple<SegmentHeader, FieldCollection, std::shared_ptr<StreamDescriptorDataImpl>, std::optional<SegmentHeaderProtoWrapper>> decode_header_and_fields(const uint8_t* src) {
+std::tuple<SegmentHeader, FieldCollection, std::shared_ptr<FrameDescriptorImpl>, std::optional<SegmentHeaderProtoWrapper>> decode_header_and_fields(const uint8_t* src) {
     auto* fixed_hdr = reinterpret_cast<const FixedHeader*>(src);
     ARCTICDB_DEBUG(log::codec(), "Reading header: {} + {} = {}",
                    FIXED_HEADER_SIZE,
@@ -124,25 +124,25 @@ std::tuple<SegmentHeader, FieldCollection, std::shared_ptr<StreamDescriptorDataI
 
     util::check_arg(fixed_hdr->magic_number == MAGIC_NUMBER, "expected first 2 bytes: {}, actual {}", fixed_hdr->magic_number, MAGIC_NUMBER);
 
-    SegmentHeader segment_header;
     FieldCollection fields;
-    auto data = std::make_shared<StreamDescriptorDataImpl>(); //TODO decode
+    auto data = std::make_shared<FrameDescriptorImpl>(); //TODO decode
     std::optional<SegmentHeaderProtoWrapper> proto_wrapper;
 
     const auto* header_ptr = src + FIXED_HEADER_SIZE;
     const auto* fields_ptr = header_ptr + fixed_hdr->header_bytes;
     if(const auto header_version = fixed_hdr->encoding_version; header_version == HEADER_VERSION_V1) {
        proto_wrapper = decode_protobuf_header(header_ptr, fixed_hdr->header_bytes);
-       segment_header.deserialize_from_proto(proto_wrapper->proto());
+       auto segment_header = deserialize_segment_header_from_proto(proto_wrapper->proto());
        util::check(segment_header.encoding_version() == EncodingVersion::V1, "Expected v1 header to contain legacy encoding version");
        field_collection_from_proto(std::move(*proto_wrapper->proto().mutable_stream_descriptor()->mutable_fields()));
+        return {std::move(segment_header), std::move(fields), std::move(data), std::move(proto_wrapper)};
     } else {
-        segment_header.deserialize_from_bytes(header_ptr, fixed_hdr->header_bytes);
+        SegmentHeader segment_header;
+        segment_header.deserialize_from_bytes(header_ptr);
         util::check(segment_header.encoding_version() == EncodingVersion::V2, "Expected V2 encoding in binary header");
         fields = deserialize_fields_collection(fields_ptr, segment_header);
+        return {std::move(segment_header), std::move(fields), std::move(data), std::move(proto_wrapper)};
     }
-
-    return {std::move(segment_header), std::move(fields), std::move(data), std::move(proto_wrapper)};
 }
 
 void check_encoding(EncodingVersion encoding_version) {

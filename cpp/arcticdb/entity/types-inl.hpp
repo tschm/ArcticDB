@@ -141,12 +141,12 @@ struct formatter<arcticdb::entity::Field> {
 };
 
 template<>
-struct formatter<arcticdb::entity::IndexDescriptor> {
+struct formatter<arcticdb::entity::IndexDescriptorImpl> {
     template<typename ParseContext>
     constexpr auto parse(ParseContext &ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
-    auto format(const arcticdb::entity::IndexDescriptor &idx, FormatContext &ctx) const {
+    auto format(const arcticdb::entity::IndexDescriptorImpl &idx, FormatContext &ctx) const {
         return format_to(ctx.out(), "IDX<size={}, kind={}>", idx.field_count(), static_cast<char>(idx.type()));
     }
 };

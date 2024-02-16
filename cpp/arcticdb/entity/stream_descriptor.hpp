@@ -13,55 +13,55 @@
 
 namespace arcticdb::entity {
 
-struct StreamDescriptorData {
-    SortedValue sorted_ = SortedValue::UNKNOWN;
-    uint64_t compressed_bytes_ = 0UL;
-    uint64_t uncompressed_bytes_ = 0UL;
-    StreamId stream_id_;
-    IndexDescriptor index_;
-};
+struct FrameDescriptorImpl : public FrameDescriptor {
+    FrameDescriptorImpl() = default;
 
-struct StreamDescriptorDataImpl : public StreamDescriptorData {
-    StreamDescriptorDataImpl() = default;
+    ARCTICDB_MOVE_COPY_DEFAULT(FrameDescriptorImpl)
 
-    ARCTICDB_MOVE_COPY_DEFAULT(StreamDescriptorDataImpl)
-
-    [[nodiscard]] StreamDescriptorDataImpl clone() const {
+    [[nodiscard]] FrameDescriptorImpl clone() const {
         return *this;
+    }
+
+    [[nodiscard]] const IndexDescriptorImpl& index() const {
+        return static_cast<const IndexDescriptorImpl&>(index_);
+    }
+
+    IndexDescriptorImpl& index() {
+        return static_cast<IndexDescriptorImpl&>(index_);
     }
 };
 
-bool operator==(const StreamDescriptorDataImpl& left, const StreamDescriptorDataImpl& right) {
-    return left.stream_id_ == right.stream_id_ && left.index_ == right.index_;
-}
+bool operator==(const FrameDescriptorImpl& left, const FrameDescriptorImpl& right) {
+    return left.index() == right.index(); }
 
-bool operator!=(const StreamDescriptorDataImpl& left, const StreamDescriptorDataImpl& right) {
+bool operator!=(const FrameDescriptorImpl& left, const FrameDescriptorImpl& right) {
     return !(left == right);
 }
 
 struct StreamDescriptor {
-    std::shared_ptr<StreamDescriptorDataImpl> data_ = std::make_shared<StreamDescriptorDataImpl>();
+    std::shared_ptr<FrameDescriptorImpl> data_ = std::make_shared<FrameDescriptorImpl>();
     std::shared_ptr<FieldCollection> fields_ = std::make_shared<FieldCollection>();
+    StreamId stream_id_;
 
     StreamDescriptor() = default;
     ~StreamDescriptor() = default;
 
-    StreamDescriptor(std::shared_ptr<StreamDescriptorDataImpl> data, std::shared_ptr<FieldCollection> fields) :
+    StreamDescriptor(std::shared_ptr<FrameDescriptorImpl> data, std::shared_ptr<FieldCollection> fields) :
             data_(std::move(data)),
             fields_(std::move(fields)) {
 
     }
 
-    [[nodiscard]] const StreamDescriptorDataImpl& data() const  {
+    [[nodiscard]] const FrameDescriptorImpl& data() const  {
         return *data_;
     }
 
     void set_id(const StreamId& id) {
-        data_->stream_id_ = id;
+        stream_id_ = id;
     }
 
     [[nodiscard]] StreamId id() const {
-        return data_->stream_id_;
+        return stream_id_;
     }
 
     [[nodiscard]] uint64_t uncompressed_bytes() const {
@@ -76,28 +76,32 @@ struct StreamDescriptor {
         return data_->sorted_;
     }
 
-    [[nodiscard]] IndexDescriptor index() const {
-        return data_->index_;
+    [[nodiscard]] IndexDescriptorImpl index() const {
+        return static_cast<IndexDescriptorImpl&>(data_->index_);
     }
 
     void set_sorted(SortedValue sorted) {
        data_->sorted_ = sorted;
     }
 
-    SortedValue get_sorted() {
+    [[nodiscard]] SortedValue get_sorted() {
         return data_->sorted_;
     }
 
-    void set_index(const IndexDescriptor& idx) {
+    void set_index(const IndexDescriptorImpl& idx) {
         data_->index_ = idx;
     }
 
-    void set_index_type(const IndexDescriptor::Type type) {
-        data_->index_.set_type(type);
+    IndexDescriptorImpl& index() {
+        return static_cast<IndexDescriptorImpl&>(data_->index_);
+    }
+
+    void set_index_type(const IndexDescriptorImpl::Type type) {
+       index().set_type(type);
     }
 
     void set_index_field_count(size_t size) {
-        data_->index_.set_field_count(size);
+        index().set_field_count(size);
     }
 
     explicit StreamDescriptor(const StreamId& id) {
@@ -108,14 +112,14 @@ struct StreamDescriptor {
         fields_->add_field(TypeDescriptor{data_type, Dimension::Dim0}, name);
     }
 
-    StreamDescriptor(const StreamId& id, const IndexDescriptor &idx, std::shared_ptr<FieldCollection> fields) {
+    StreamDescriptor(const StreamId& id, const IndexDescriptorImpl &idx, std::shared_ptr<FieldCollection> fields) {
         set_id(id);
         set_index(idx);
         util::check(static_cast<bool>(fields), "Creating field collection with null pointer");
         fields_ = std::move(fields);
     }
 
-    StreamDescriptor(const StreamId& id, const IndexDescriptor &idx) {
+    StreamDescriptor(const StreamId& id, const IndexDescriptorImpl &idx) {
         set_id(id);
         set_index(idx);
     }
@@ -129,6 +133,7 @@ struct StreamDescriptor {
         if(&left == &right)
             return;
 
+        swap(left.stream_id_, right.stream_id_);
         swap(left.data_, right.data_);
         swap(left.fields_, right.fields_);
     }
@@ -144,7 +149,7 @@ struct StreamDescriptor {
     }
 
     [[nodiscard]] StreamDescriptor clone() const {
-        return StreamDescriptor{std::make_shared<StreamDescriptorDataImpl>(data_->clone()), std::make_shared<FieldCollection>(fields_->clone())};
+        return StreamDescriptor{std::make_shared<FrameDescriptorImpl>(data_->clone()), std::make_shared<FieldCollection>(fields_->clone())};
     };
 
     [[nodiscard]] const FieldCollection& fields() const {
@@ -181,7 +186,7 @@ struct StreamDescriptor {
         return fields_;
     }
 
-    [[nodiscard]] std::shared_ptr<StreamDescriptorDataImpl> data_ptr() const {
+    [[nodiscard]] std::shared_ptr<FrameDescriptorImpl> data_ptr() const {
         return data_;
     }
 
@@ -219,7 +224,6 @@ struct StreamDescriptor {
     }
 
     friend bool operator==(const StreamDescriptor& left, const StreamDescriptor& right) {
-        google::protobuf::util::MessageDifferencer diff;
         if(*left.data_ != *right.data_)
             return false;
 

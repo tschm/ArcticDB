@@ -46,7 +46,7 @@ namespace arcticdb {
         static void encode(
             const arcticdb::proto::encoding::VariantCodec &codec_opts,
             ColumnData& column_data,
-            EncodedFieldImpl& variant_field,
+            EncodedFieldImpl& field,
             Buffer& out,
             std::ptrdiff_t& pos);
 
@@ -80,59 +80,56 @@ namespace arcticdb {
     }
 
     void ColumnEncoderV2::encode(
-        const arcticdb::proto::encoding::VariantCodec& codec_opts,
-        ColumnData& column_data,
-        EncodedFieldImpl& variant_field,
-        Buffer& out,
-        std::ptrdiff_t& pos
-    ) {
+            const arcticdb::proto::encoding::VariantCodec& codec_opts,
+            ColumnData& column_data,
+            EncodedFieldImpl& variant_field,
+            Buffer& out,
+            std::ptrdiff_t& pos) {
         encode_shapes(column_data, variant_field, out, pos);
         encode_blocks(codec_opts, column_data, variant_field, out, pos);
         encode_sparse_map(column_data, variant_field, out, pos);
     }
 
     void ColumnEncoderV2::encode_shapes(
-        const ColumnData& column_data,
-        EncodedFieldImpl& field,
-        Buffer& out,
-        std::ptrdiff_t& pos_in_buffer
-    ) {
+            const ColumnData& column_data,
+            EncodedFieldImpl& field,
+            Buffer& out,
+            std::ptrdiff_t& pos_in_buffer) {
         // There is no need to store the shapes for a column of empty type as they will be all 0. The type handler will
         // assign 0 for the shape upon reading. There is one edge case - when we have None in the column, as it should not
         // have shape at all (since it's not an array). This is handled by the sparse map.
         if(column_data.type().dimension() != Dimension::Dim0 && !is_empty_type(column_data.type().data_type())) {
             TypedBlockData<ShapesBlockTDT> shapes_block = create_shapes_typed_block(column_data);
             using ShapesEncoder = TypedBlockEncoderImpl<TypedBlockData, ShapesBlockTDT, EncodingVersion::V2>;
-            ShapesEncoder::encode_shapes(codec::default_shapes_codec(), shapes_block, *field, out, pos_in_buffer);
+            ShapesEncoder::encode_shapes(codec::default_shapes_codec(), shapes_block, field, out, pos_in_buffer);
         }
     }
 
     void ColumnEncoderV2::encode_blocks(
-        const arcticdb::proto::encoding::VariantCodec &codec_opts,
-        ColumnData& column_data,
-        EncodedFieldImpl& variant_field,
-        Buffer& out,
-        std::ptrdiff_t& pos
-    ) {
-        column_data.type().visit_tag([&](auto type_desc_tag) {
+            const arcticdb::proto::encoding::VariantCodec &codec_opts,
+            ColumnData& column_data,
+            EncodedFieldImpl& field,
+            Buffer& out,
+            std::ptrdiff_t& pos) {
+        column_data.type().visit_tag([&codec_opts, &column_data, &field, &out, &pos](auto type_desc_tag) {
             using TDT = decltype(type_desc_tag);
             using Encoder = TypedBlockEncoderImpl<TypedBlockData, TDT, EncodingVersion::V2>;
             ARCTICDB_TRACE(log::codec(), "Column data has {} blocks", column_data.num_blocks());
             while (auto block = column_data.next<TDT>()) {
                 if constexpr(must_contain_data(static_cast<TypeDescriptor>(type_desc_tag))) {
-                    util::check(block.value().nbytes() > 0, "Zero-sized block");
+                    util::check(block->nbytes() > 0, "Zero-sized block");
+                    Encoder::encode_values(codec_opts, block.value(), field, out, pos);
+                } else {
+                    if(block->nbytes() > 0)
+                        Encoder::encode_values(codec_opts, block.value(), field, out, pos);
                 }
-                util::variant_match(variant_field, [&](auto field) {
-                    Encoder::encode_values(codec_opts, block.value(), *field, out, pos);
-                });
             }
         });
     }
 
     std::pair<size_t, size_t> ColumnEncoderV2::max_compressed_size(
-        const arcticdb::proto::encoding::VariantCodec& codec_opts,
-        ColumnData& column_data
-    ) {
+            const arcticdb::proto::encoding::VariantCodec& codec_opts,
+            ColumnData& column_data) {
         return column_data.type().visit_tag([&codec_opts, &column_data](auto type_desc_tag) {
             size_t max_compressed_bytes = 0;
             size_t uncompressed_bytes = 0;
@@ -148,14 +145,16 @@ namespace arcticdb {
                 const auto nbytes = block.value().nbytes();
                 if constexpr(must_contain_data(static_cast<TypeDescriptor>(type_desc_tag))) {
                     util::check(nbytes > 0, "Zero-sized block");
+                    uncompressed_bytes += nbytes;
+                    max_compressed_bytes += Encoder::max_compressed_size(codec_opts, block.value());
+                } else {
+                    if(nbytes > 0) {
+                        uncompressed_bytes += nbytes;
+                        max_compressed_bytes += Encoder::max_compressed_size(codec_opts, block.value());
+                    }
                 }
-                uncompressed_bytes += nbytes;
-                // For the empty type the column will contain 0 size of user data however the encoder might need add some
-                // encoder specific data to the buffer, thus the uncompressed size will be 0 but the max_compressed_bytes
-                // might be non-zero.
-                max_compressed_bytes += Encoder::max_compressed_size(codec_opts, block.value());
             }
-            add_bitmagic_compressed_size(column_data, uncompressed_bytes, max_compressed_bytes);
+            add_bitmagic_compressed_size(column_data, max_compressed_bytes, uncompressed_bytes);
             return std::make_pair(uncompressed_bytes, max_compressed_bytes);
         });
     }
@@ -163,12 +162,11 @@ namespace arcticdb {
     using EncodingPolicyV2 = EncodingPolicyType<EncodingVersion::V2, ColumnEncoderV2>;
 
     static void encode_field_descriptors(
-        const SegmentInMemory& in_mem_seg,
-        SegmentHeader& segment_header,
-        const arcticdb::proto::encoding::VariantCodec& codec_opts,
-        Buffer& out_buffer,
-        std::ptrdiff_t& pos
-    ) {
+            const SegmentInMemory& in_mem_seg,
+            SegmentHeader& segment_header,
+            const arcticdb::proto::encoding::VariantCodec& codec_opts,
+            Buffer& out_buffer,
+            std::ptrdiff_t& pos) {
         ARCTICDB_TRACE(log::codec(), "Encoding field descriptors to position {}", pos);
         auto& encoded_field = segment_header.mutable_descriptor_field();
         auto col = in_mem_seg.descriptor().fields().column_data();
@@ -211,20 +209,18 @@ namespace arcticdb {
     }
 
     static void calc_encoded_blocks_size(
-        const SegmentInMemory& in_mem_seg,
-        const arcticdb::proto::encoding::VariantCodec& codec_opts,
-        SizeResult& result
-    ) {
+            const SegmentInMemory& in_mem_seg,
+            const arcticdb::proto::encoding::VariantCodec& codec_opts,
+            SizeResult& result) {
         result.encoded_blocks_bytes_ = static_cast<shape_t>(encoded_blocks_size(in_mem_seg));
         result.uncompressed_bytes_ += result.encoded_blocks_bytes_;
         result.max_compressed_bytes_ += BytesEncoder<EncodingPolicyV2>::max_compressed_size(codec_opts, result.encoded_blocks_bytes_);
     }
 
     static void calc_stream_descriptor_fields_size(
-        const SegmentInMemory& in_mem_seg,
-        const arcticdb::proto::encoding::VariantCodec& codec_opts,
-        SizeResult& result
-    ) {
+            const SegmentInMemory& in_mem_seg,
+            const arcticdb::proto::encoding::VariantCodec& codec_opts,
+            SizeResult& result) {
         auto segment_fields = in_mem_seg.descriptor().fields().column_data();
         const auto [uncompressed, required] = ColumnEncoderV2::max_compressed_size(codec_opts, segment_fields);
         result.uncompressed_bytes_ += uncompressed;
@@ -240,9 +236,8 @@ namespace arcticdb {
     }
 
     [[nodiscard]] static SizeResult max_compressed_size_v2(
-        const SegmentInMemory& in_mem_seg,
-        const arcticdb::proto::encoding::VariantCodec& codec_opts
-    ) {
+            const SegmentInMemory& in_mem_seg,
+            const arcticdb::proto::encoding::VariantCodec& codec_opts) {
         ARCTICDB_SAMPLE(GetSegmentCompressedSize, 0)
         SizeResult result{};
         result.max_compressed_bytes_ += sizeof(MetadataMagic);
@@ -265,22 +260,24 @@ namespace arcticdb {
     }
 
     static void encode_encoded_fields(
-        arcticdb::proto::encoding::SegmentHeader& segment_header,
-        const arcticdb::proto::encoding::VariantCodec& codec_opts,
-        Buffer& out_buffer,
-        std::ptrdiff_t& pos,
-        const ChunkedBuffer& encoded_blocks_buffer
-    ) {
-
+            SegmentHeader& segment_header,
+            const arcticdb::proto::encoding::VariantCodec& codec_opts,
+            Buffer& out_buffer,
+            std::ptrdiff_t& pos,
+            EncodedFieldCollection&& encoded_fields) {
         ARCTICDB_TRACE(log::codec(), "Encoding encoded blocks to position {}", pos);
         auto encoded_field = segment_header.mutable_column_fields();
-        encoded_field->set_offset(static_cast<uint32_t>(pos));
+        segment_header.set_footer_offset(pos);
         write_magic<EncodedMagic>(out_buffer, pos);
-        BytesEncoder<EncodingPolicyV2>::encode(encoded_blocks_buffer, codec_opts, out_buffer, pos, encoded_field);
+        Column encoded_fields_column(encoded_fields_type_desc(), false, encoded_fields.release_data(), encoded_fields.release_offsets());
+        auto data = encoded_fields_column.data();
+        ColumnEncoderV2::encode(codec_opts, data, encoded_field, out_buffer, pos);
         ARCTICDB_TRACE(log::codec(), "Encoded encoded blocks to position {}", pos);
     }
 
-    [[nodiscard]] Segment encode_v2(SegmentInMemory&& s, const arcticdb::proto::encoding::VariantCodec &codec_opts) {
+    [[nodiscard]] Segment encode_v2(
+            SegmentInMemory&& s,
+            const arcticdb::proto::encoding::VariantCodec &codec_opts) {
         ARCTICDB_SAMPLE(EncodeSegment, 0)
         auto in_mem_seg = std::move(s);
 
@@ -303,29 +300,25 @@ namespace arcticdb {
         write_magic<DescriptorMagic>(*out_buffer, pos);
         encode_field_descriptors(in_mem_seg, segment_header, codec_opts, *out_buffer, pos);
 
-        auto encoded_fields_buffer = ChunkedBuffer::presized(static_cast<size_t>(encoded_buffer_size));
+        EncodedFieldCollection encoded_fields(encoded_buffer_size, in_mem_seg.num_columns());
         auto encoded_field_pos = 0u;
         ColumnEncoderV2 encoder;
         if(in_mem_seg.row_count() > 0) {
             ARCTICDB_TRACE(log::codec(), "Encoding fields");
             for (std::size_t column_index = 0; column_index < in_mem_seg.num_columns(); ++column_index) {
                 write_magic<ColumnMagic>(*out_buffer, pos);
-                auto column_field = new(encoded_fields_buffer.data() + encoded_field_pos) EncodedField;
+                auto* column_field = encoded_fields.add_field(column_index, encoded_field_pos);
                 ARCTICDB_TRACE(log::codec(),"Beginning encoding of column {}: ({}) to position {}", column_index, in_mem_seg.descriptor().field(column_index).name(), pos);
                 auto column_data = in_mem_seg.column_data(column_index);
                 encoder.encode(codec_opts, column_data, *column_field, *out_buffer, pos);
                 ARCTICDB_TRACE(log::codec(), "Encoded column {}: ({}) to position {}", column_index, in_mem_seg.descriptor().field(column_index).name(), pos);
                 encoded_field_pos += encoded_field_bytes(*column_field);
-                util::check(encoded_field_pos <= encoded_fields_buffer.bytes(),
-                    "Encoded field buffer overflow {} > {}",
-                    encoded_field_pos,
-                    encoded_fields_buffer.bytes());
             }
             write_magic<StringPoolMagic>(*out_buffer, pos);
             encode_string_pool<EncodingPolicyV2>(in_mem_seg, segment_header, codec_opts, *out_buffer, pos);
         }
 
-        encode_encoded_fields(segment_header, codec_opts, *out_buffer, pos, encoded_fields_buffer);
+        encode_encoded_fields(segment_header, codec_opts, *out_buffer, pos, std::move(encoded_fields));
         out_buffer->set_bytes(pos);
         descriptor_data->compressed_bytes_ = pos;
 

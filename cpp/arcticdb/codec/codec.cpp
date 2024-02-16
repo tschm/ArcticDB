@@ -38,11 +38,6 @@ constexpr TypeDescriptor metadata_type_desc() {
     };
 }
 
-constexpr TypeDescriptor encoded_blocks_type_desc() {
-    return TypeDescriptor{
-        DataType::UINT8, Dimension::Dim1
-    };
-}
 
 Segment encode_dispatch(
     SegmentInMemory&& in_mem_seg,
@@ -116,6 +111,17 @@ std::optional<google::protobuf::Any> decode_metadata(
     }
 }
 
+std::shared_ptr<arcticdb::proto::descriptors::FrameMetadata> extract_frame_metadata(
+    SegmentHeader& hdr,
+    SegmentInMemory& res
+    ) {
+    std::shared_ptr<arcticdb::proto::descriptors::FrameMetadata> output;
+    util::check(res.has_metadata(), "Cannot extract frame metadata as it is null");
+    res.metadata()->UnpackTo(output.get());
+    return output; //TODO nuke metadata?
+}
+
+
 void decode_metadata(
     const SegmentHeader& hdr,
     const uint8_t*& data,
@@ -137,20 +143,34 @@ std::optional<google::protobuf::Any> decode_metadata_from_segment(const Segment 
     return decode_metadata(hdr, data, begin);
 }
 
-Buffer decode_encoded_fields(
-    const SegmentHeader& hdr,
-    const uint8_t* data,
-    const uint8_t* begin ARCTICDB_UNUSED) {
-        ARCTICDB_TRACE(log::codec(), "Decoding encoded fields");
-        MetaBuffer meta_buffer;
-        std::optional<util::BitMagic> bv;
-        if(hdr.has_column_fields()) {
-            constexpr auto type_desc = encoded_blocks_type_desc();
-            decode_field(type_desc, hdr.column_fields(), data, meta_buffer, bv, hdr.encoding_version());
-        }
-        ARCTICDB_TRACE(log::codec(), "Decoded encoded fields at position {}", data-begin);
-        return meta_buffer.detach_buffer();
+EncodedFieldCollection decode_encoded_fields(
+        const SegmentHeader& hdr,
+        const uint8_t* data,
+        const uint8_t* begin ARCTICDB_UNUSED) {
+    ARCTICDB_TRACE(log::codec(), "Decoding encoded fields");
+
+    util::check(hdr.has_column_fields(), "Expected encoded field description to be set in header");
+    std::optional<util::BitMagic> bv;
+    const auto uncompressed_size = encoding_sizes::uncompressed_size(hdr.column_fields());
+    constexpr auto type_desc = encoded_fields_type_desc();
+    Column encoded_column(type_desc, uncompressed_size, true, false);
+    decode_field(type_desc, hdr.column_fields(), data, encoded_column, bv, hdr.encoding_version());
+
+    ARCTICDB_TRACE(log::codec(), "Decoded encoded fields at position {}", data-begin);
+    return {std::move(encoded_column.release_buffer()), std::move(encoded_column.release_shapes())};
 }
+
+FrameDescriptorImpl read_frame_descriptor(
+    const SegmentHeader& hdr,
+    const uint8_t*& data,
+    const uint8_t* begin ARCTICDB_UNUSED,
+    const uint8_t* end) {
+    util::check_magic<FrameDataMagic>(data);
+    auto* frame_descriptor = reinterpret_cast<const FrameDescriptorImpl*>(data);
+    data += sizeof(FrameDescriptorImpl);
+    return *frame_descriptor;
+}
+
 
 std::optional<FieldCollection> decode_index_fields(
     const SegmentHeader& hdr,
@@ -309,9 +329,13 @@ void decode_v2(const Segment& segment,
         data += encoding_sizes::field_compressed_size(hdr.descriptor_field());
 
     util::check_magic<IndexMagic>(data);
-    if(auto index_fields = decode_index_fields(hdr, data, begin, end); index_fields)
-        res.set_index_fields(std::make_shared<FieldCollection>(std::move(*index_fields)));
-
+    if(hdr.has_index_descriptor_field()) {
+        auto index_frame_descriptor = read_frame_descriptor(hdr, data, begin, end);
+        auto index_fields = decode_index_fields(hdr, data, begin, end);
+        auto frame_metadata = extract_frame_metadata(hdr, res);
+        util::check(index_fields.has_value(), "Failed to get index fields");
+            res.set_index_descriptorstd::make_shared<FieldCollection>(std::move(*index_fields)));
+    }
     util::check(hdr.has_column_fields(), "Expected column fields in v2 encoding");
     util::check_magic<EncodedMagic>(encoded_fields_ptr);
     if (data!=end) {

@@ -1,40 +1,15 @@
-#pragma once
-
+//
+// Created by root on 2/16/24.
+//
 #include <arcticdb/entity/protobufs.hpp>
 #include <arcticdb/codec/encoded_field.hpp>
 #include <arcticdb/util/preconditions.hpp>
 #include <arcticdb/memory_layout.hpp>
+#include <arcticdb/codec/segment_header.hpp>
+#include <arcticdb/codec/protobuf_mappings.hpp>
+#include <folly/container/Enumerate.h>
 
 namespace arcticdb {
-
-template <typename T, typename U>
-void copy_codec(T& out_codec, const U& in_codec) {
-    out_codec.MergeFrom(in_codec);
-}
-
-void copy_codec(ZstdCodec& codec, const arcticdb::proto::encoding::VariantCodec::Zstd& zstd) {
-    codec.level_ = zstd.level();
-    codec.is_streaming_ = zstd.is_streaming();
-}
-
-void copy_codec(Lz4Codec& codec, const arcticdb::proto::encoding::VariantCodec::Lz4& lz4) {
-    codec.acceleration_ = lz4.acceleration();
-}
-
-void copy_codec(PassthroughCodec&, const arcticdb::proto::encoding::VariantCodec::Passthrough&) {
-    // No data in passthrough
-}
-
-
-[[nodiscard]] arcticdb::proto::encoding::VariantCodec::CodecCase codec_case(Codec codec) {
-    switch (codec) {
-    case Codec::ZSTD:return arcticdb::proto::encoding::VariantCodec::kZstd;
-    case Codec::LZ4:return arcticdb::proto::encoding::VariantCodec::kLz4;
-    case Codec::PFOR:return arcticdb::proto::encoding::VariantCodec::kTp4;
-    case Codec::PASS:return arcticdb::proto::encoding::VariantCodec::kPassthrough;
-    default:util::raise_rte("Unknown codec");
-    }
-}
 
 size_t calc_encoded_field_buffer_size(const arcticdb::proto::encoding::EncodedField& field) {
     size_t bytes = EncodedFieldImpl::Size;
@@ -46,10 +21,6 @@ size_t calc_encoded_field_buffer_size(const arcticdb::proto::encoding::EncodedFi
     return bytes;
 }
 
-template <typename Input, typename Output>
-void set_codec(Input& in, Output& out) {
-    copy_codec(out, in);
-}
 void block_from_proto(const arcticdb::proto::encoding::Block& input, EncodedBlock& output, bool is_shape) {
     output.set_in_bytes(input.in_bytes());
     output.set_out_bytes(input.out_bytes());
@@ -57,35 +28,21 @@ void block_from_proto(const arcticdb::proto::encoding::Block& input, EncodedBloc
     output.set_encoder_version(static_cast<uint8_t>(input.encoder_version()));
     output.is_shape_ = is_shape;
     switch (input.codec().codec_case()) {
-        case arcticdb::proto::encoding::VariantCodec::kZstd: {
-            set_codec(input.codec().zstd(), *output.mutable_codec()->mutable_zstd());
-            break;
-        }
-        case arcticdb::proto::encoding::VariantCodec::kLz4: {
-            set_codec(input.codec().lz4(), *output.mutable_codec()->mutable_lz4());
-            break;
-        }
-        case arcticdb::proto::encoding::VariantCodec::kPassthrough : {
-            set_codec(input.codec().passthrough(), *output.mutable_codec()->mutable_passthrough());
-            break;
-        }
-        default:
-            util::raise_rte("Unrecognized_codec");
+    case arcticdb::proto::encoding::VariantCodec::kZstd: {
+        set_codec(input.codec().zstd(), *output.mutable_codec()->mutable_zstd());
+        break;
     }
-}
-
-void set_lz4(const Lz4Codec& lz4_in, arcticdb::proto::encoding::VariantCodec::Lz4& lz4_out) {
-    lz4_out.set_acceleration(lz4_in.acceleration_);
-}
-
-
-void set_zstd(const ZstdCodec& zstd_in, arcticdb::proto::encoding::VariantCodec::Zstd& zstd_out) {
-    zstd_out.set_is_streaming(zstd_in.is_streaming_);
-    zstd_out.set_level(zstd_in.level_);
-}
-
-void set_passthrough(const PassthroughCodec& passthrough_in, arcticdb::proto::encoding::VariantCodec::Passthrough& passthrough_out) {
-    passthrough_out.set_mark(passthrough_in.unused_);
+    case arcticdb::proto::encoding::VariantCodec::kLz4: {
+        set_codec(input.codec().lz4(), *output.mutable_codec()->mutable_lz4());
+        break;
+    }
+    case arcticdb::proto::encoding::VariantCodec::kPassthrough : {
+        set_codec(input.codec().passthrough(), *output.mutable_codec()->mutable_passthrough());
+        break;
+    }
+    default:
+        util::raise_rte("Unrecognized_codec");
+    }
 }
 
 void proto_from_block(const EncodedBlock& input, arcticdb::proto::encoding::Block& output) {
@@ -148,6 +105,65 @@ void proto_from_encoded_field(const EncodedFieldImpl& input, arcticdb::proto::en
     }
 }
 
+void deserialize_proto_field(
+    SegmentHeader& segment_header,
+    FieldOffset field_offset,
+    CursoredBuffer<Buffer>& buffer,
+    const arcticdb::proto::encoding::EncodedField& field,
+    size_t& pos) {
+    segment_header.set_field(field_offset);
+    segment_header.set_offset(field_offset, pos++);
+    const auto field_size = calc_encoded_field_buffer_size(field);
+    buffer.ensure<uint8_t>(field_size);
+    auto* data = buffer.data();
+    encoded_field_from_proto(field, *reinterpret_cast<EncodedFieldImpl*>(data));
+}
+
+SegmentHeader deserialize_segment_header_from_proto(const arcticdb::proto::encoding::SegmentHeader& header) {
+    SegmentHeader output;
+    output.set_encoding_version(EncodingVersion(header.encoding_version()));
+    output.set_compacted(header.compacted());
+
+    auto pos = 0UL;
+    CursoredBuffer<Buffer> buffer;
+    if(header.has_metadata_field())
+        deserialize_proto_field(output, FieldOffset::METADATA, buffer, header.descriptor_field(), pos);
+
+    if(header.has_string_pool_field())
+        deserialize_proto_field(output, FieldOffset::STRING_POOL, buffer, header.string_pool_field(), pos);
+
+    if(header.has_descriptor_field())
+        deserialize_proto_field(output, FieldOffset::DESCRIPTOR, buffer, header.descriptor_field(), pos);
+
+    if(header.has_index_descriptor_field())
+        deserialize_proto_field(output, FieldOffset::INDEX, buffer, header.index_descriptor_field(), pos);
+
+    if(header.has_column_fields())
+        deserialize_proto_field(output, FieldOffset::COLUMN, buffer, header.column_fields(), pos);
+}
+
+void serialize_segment_header_to_proto(uint8_t* dst, const SegmentHeader& hdr) {
+    arcticdb::proto::encoding::SegmentHeader segment_header;
+    if(hdr.has_metadata_field())
+        proto_from_encoded_field(hdr.metadata_field(), *segment_header.mutable_metadata_field());
+
+    if(hdr.has_string_pool_field())
+        proto_from_encoded_field(hdr.metadata_field(), *segment_header.mutable_metadata_field());
+
+    if(hdr.has_descriptor_field())
+        proto_from_encoded_field(hdr.metadata_field(), *segment_header.mutable_metadata_field());
+
+    if(hdr.has_index_descriptor_field())
+        proto_from_encoded_field(hdr.metadata_field(), *segment_header.mutable_metadata_field());
+
+    if(hdr.has_column_fields())
+        proto_from_encoded_field(hdr.metadata_field(), *segment_header.mutable_metadata_field());
+
+    const auto hdr_size = segment_header.ByteSizeLong();
+    google::protobuf::io::ArrayOutputStream aos(dst + FIXED_HEADER_SIZE, static_cast<int>(hdr_size));
+    segment_header.SerializeToZeroCopyStream(&aos);
+}
+
 size_t calc_proto_encoded_blocks_size(const arcticdb::proto::encoding::SegmentHeader& hdr) {
     size_t bytes{};
     for(const auto& field : hdr.fields()) {
@@ -164,13 +180,14 @@ size_t calc_proto_encoded_blocks_size(const arcticdb::proto::encoding::SegmentHe
 
 EncodedFieldCollection encoded_fields_from_proto(const arcticdb::proto::encoding::SegmentHeader& hdr) {
     const auto encoded_buffer_size = calc_proto_encoded_blocks_size(hdr);
-    Buffer buffer(encoded_buffer_size);
+    EncodedFieldCollection encoded_fields(encoded_buffer_size, hdr.fields_size());
+    auto buffer = ChunkedBuffer::presized(encoded_buffer_size);
     auto pos = 0U;
-    for(const auto& in_field : hdr.fields()) {
-       auto* out_field = reinterpret_cast<EncodedFieldImpl*>(buffer.data() + pos);
+    for(auto&& [index, in_field] : folly::enumerate(hdr.fields())) {
+        auto* out_field = encoded_fields.add_field(pos, static_cast<shape_t>(index));
         encoded_field_from_proto(in_field, *out_field);
     }
-    return EncodedFieldCollection{std::move(buffer)};
+    return encoded_fields;
 }
 
 } //namespace arcticdb

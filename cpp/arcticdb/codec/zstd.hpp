@@ -10,7 +10,7 @@
 #include <arcticdb/codec/segment.hpp>
 #include <arcticdb/entity/performance_tracing.hpp>
 #include <arcticdb/stream/protobuf_mappings.hpp>
-#include <arcticdb/codec/protobuf_encoding.hpp>
+#include <arcticdb/codec/protobuf_mappings.hpp>
 #include <arcticdb/storage/common.hpp>
 #include <arcticdb/util/pb_util.hpp>
 #include <arcticdb/util/dump_bytes.hpp>

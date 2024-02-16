@@ -15,16 +15,57 @@
 namespace arcticdb {
 
 struct TimeseriesDescriptor {
-  using Proto = arcticdb::proto::descriptors::TimeSeriesDescriptor;
+  using Proto = arcticdb::proto::descriptors::FrameMetadata;
 
-  std::shared_ptr<StreamDescriptorDataImpl> data_;
+  std::shared_ptr<FrameDescriptorImpl> data_;
   std::shared_ptr<Proto> proto_ = std::make_shared<Proto>();
   std::shared_ptr<FieldCollection> fields_ = std::make_shared<FieldCollection>();
+
   TimeseriesDescriptor() = default;
 
   TimeseriesDescriptor(std::shared_ptr<Proto> proto, std::shared_ptr<FieldCollection> fields) :
     proto_(std::move(proto)),
     fields_(std::move(fields)) {
+  }
+
+  void set_total_rows(uint64_t rows) {
+      data_->total_rows_ = rows;
+  }
+
+  [[nodiscard]] uint64_t total_rows() const {
+      return data_->total_rows_;
+  }
+
+  [[nodiscard]] SortedValue sorted() const {
+      return data_->sorted_;
+  }
+
+  void set_sorted(SortedValue sorted) {
+      data_->sorted_ = sorted;
+  }
+
+  arcticdb::proto::descriptors::UserDefinedMetadata&& detach_user_metadata() {
+    return std::move(*proto_->mutable_multi_key_meta());
+  }
+
+  arcticdb::proto::descriptors::NormalizationMetadata&& detach_normalization_metadata() {
+    return std::move(*proto_->mutable_normalization());
+  }
+
+  arcticdb::proto::descriptors::UserDefinedMetadata&& detach_multi_key_metadata() {
+    return std::move(*proto_->mutable_multi_key_meta());
+  }
+
+  void set_user_metadata(arcticdb::proto::descriptors::UserDefinedMetadata&& user_meta) {
+      *proto_->mutable_user_meta() = std::move(user_meta);
+  }
+
+  void set_normalization_metadata(arcticdb::proto::descriptors::NormalizationMetadata&& norm_meta) {
+      *proto_->mutable_normalization() = std::move(norm_meta);
+  }
+
+  void set_multi_key_metadata(arcticdb::proto::descriptors::UserDefinedMetadata&& multi_key_meta) {
+      *proto_->mutable_multi_key_meta() = std::move(multi_key_meta);
   }
 
   [[nodiscard]] std::shared_ptr<FieldCollection> fields_ptr() const  {
@@ -37,14 +78,6 @@ struct TimeseriesDescriptor {
 
   [[nodiscard]] bool proto_is_null() const {
       return !proto_;
-  }
-
-  void set_stream_descriptor(const StreamDescriptor& desc) {
-      fields_ = std::make_shared<FieldCollection>(desc.fields().clone());
-      data_ = std::make_shared<StreamDescriptorDataImpl>(desc.data().clone());
-      proto_ = std::make_shared<Proto>();
-      auto stream_desc = copy_stream_descriptor_to_proto(desc);
-      proto_->mutable_stream_descriptor()->CopyFrom(stream_desc);
   }
 
   [[nodiscard]] const FieldCollection& fields() const {
@@ -70,17 +103,7 @@ struct TimeseriesDescriptor {
   }
 
   [[nodiscard]] StreamDescriptor as_stream_descriptor() const {
-      return StreamDescriptor(data_, fields_);
-  }
-
-  void copy_to_self_proto() {
-      proto_->mutable_stream_descriptor()->mutable_fields()->Clear();
-      for(const auto& field : *fields_) {
-          auto new_field = proto_->mutable_stream_descriptor()->mutable_fields()->Add();
-          new_field->set_name(std::string(field.name()));
-          new_field->mutable_type_desc()->set_dimension(static_cast<uint32_t>(field.type().dimension()));
-          set_data_type(field.type().data_type(), *new_field->mutable_type_desc());
-      }
+      return {data_, fields_};
   }
 };
 
