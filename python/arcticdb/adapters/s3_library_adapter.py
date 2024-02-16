@@ -41,6 +41,9 @@ class ParsedQuery:
     # DEPRECATED - see https://github.com/man-group/ArcticDB/pull/833
     force_uri_lib_config: Optional[bool] = True
 
+    CA_cert_path: Optional[str] = ""
+    CA_cert_dir: Optional[str] = ""
+
 
 class S3LibraryAdapter(ArcticLibraryAdapter):
     REGEX = r"s3(s)?://(?P<endpoint>.*):(?P<bucket>[-_a-zA-Z0-9.]+)(?P<query>\?.*)?"
@@ -99,6 +102,8 @@ class S3LibraryAdapter(ArcticLibraryAdapter):
             with_prefix=with_prefix,
             region=self._query_params.region,
             use_virtual_addressing=self._query_params.use_virtual_addressing,
+            ca_cert_path=self._query_params._ca_cert_path,
+            ca_cert_dir=self._query_params._ca_cert_dir,
         )
 
         lib = NativeVersionStore.create_store_from_config(
@@ -156,6 +161,10 @@ class S3LibraryAdapter(ArcticLibraryAdapter):
             s3_override.endpoint = self._endpoint
         if self._bucket:
             s3_override.bucket_name = self._bucket
+        if self._ca_cert_path:
+            s3_override.ca_cert_path = self._query_params._ca_cert_path
+        if self._ca_cert_path:
+            s3_override.ca_cert_dir = self._query_params._ca_cert_dir
 
         s3_override.use_virtual_addressing = self._query_params.use_virtual_addressing
 
@@ -194,6 +203,8 @@ class S3LibraryAdapter(ArcticLibraryAdapter):
             env_name=_DEFAULT_ENV,
             region=self._query_params.region,
             use_virtual_addressing=self._query_params.use_virtual_addressing,
+            ca_cert_path=self._query_params._ca_cert_path,
+            ca_cert_dir=self._query_params._ca_cert_dir,
         )
 
         library_options.encoding_version = (

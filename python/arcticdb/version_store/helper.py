@@ -225,6 +225,8 @@ def get_s3_proto(
     is_https=False,
     region=None,
     use_virtual_addressing=False,
+    ca_cert_path: str = "",
+    ca_cert_dir: str = "",
 ):
     env = cfg.env_by_id[env_name]
     s3 = S3Config()
@@ -251,6 +253,10 @@ def get_s3_proto(
 
     if region:
         s3.region = region
+    if region:
+        s3.ca_cert_path = ca_cert_path
+    if region:
+        s3.ca_cert_dir = ca_cert_dir
 
     sid, storage = get_storage_for_lib_name(s3.prefix, env)
     storage.config.Pack(s3, type_url_prefix="cxx.arctic.org")
@@ -270,6 +276,8 @@ def add_s3_library_to_env(
     is_https=False,
     region=None,
     use_virtual_addressing=False,
+    ca_cert_path: str = "",
+    ca_cert_dir: str = "",
 ):
     env = cfg.env_by_id[env_name]
     if with_prefix and isinstance(with_prefix, str) and (with_prefix.endswith("/") or "//" in with_prefix):
@@ -278,7 +286,7 @@ def add_s3_library_to_env(
             f" [{with_prefix}]"
         )
 
-    sid, storage = get_s3_proto(
+    sid, _ = get_s3_proto(
         cfg=cfg,
         lib_name=lib_name,
         env_name=env_name,
@@ -290,6 +298,8 @@ def add_s3_library_to_env(
         is_https=is_https,
         region=region,
         use_virtual_addressing=use_virtual_addressing,
+        ca_cert_path=ca_cert_path,
+        ca_cert_dir=ca_cert_dir
     )
 
     _add_lib_desc_to_env(env, lib_name, sid, description)
@@ -335,7 +345,7 @@ def add_azure_library_to_env(
     ca_cert_path: str = "",
 ):
     env = cfg.env_by_id[env_name]
-    sid, storage = get_azure_proto(
+    sid, _ = get_azure_proto(
         cfg=cfg,
         lib_name=lib_name,
         env_name=env_name,

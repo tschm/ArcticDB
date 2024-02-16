@@ -13,12 +13,14 @@ import os
 import re
 import sys
 import time
+import trustme
+from tempfile import mkdtemp
 
 import requests
 from typing import NamedTuple, Optional, Any, Type
 
 from .api import *
-from .utils import get_ephemeral_port, GracefulProcessUtils, wait_for_server_to_come_up
+from .utils import get_ephemeral_port, GracefulProcessUtils, wait_for_server_to_come_up, safer_rmtree, create_ssl_cert_for_testing
 from arcticc.pb2.storage_pb2 import EnvironmentConfigsMap
 from arcticdb.version_store.helper import add_s3_library_to_env
 
@@ -41,7 +43,7 @@ class S3Bucket(StorageFixture):
     key: Key
     _boto_bucket: Any = None
 
-    def __init__(self, factory: "BaseS3StorageFixtureFactory", bucket: str):
+    def __init__(self, factory: "BaseS3StorageFixtureFactory", bucket: str, ssl: Optional[bool] = True):
         super().__init__()
         self.factory = factory
         self.bucket = bucket
@@ -177,8 +179,12 @@ class MotoS3StorageFixtureFactory(BaseS3StorageFixtureFactory):
     _bucket_id = 0
     _live_buckets: List[S3Bucket] = []
 
+    def __init__(self, ssl: Optional[bool] = True):
+        self.http_protocol = "https" if ssl else "http"
+
+
     @staticmethod
-    def run_server(port):
+    def run_server(port, key_file, cert_file):
         import werkzeug
         from moto.server import DomainDispatcherApplication, create_backend_app
 
@@ -210,21 +216,32 @@ class MotoS3StorageFixtureFactory(BaseS3StorageFixtureFactory):
                         self._reqs_till_rate_limit -= 1
 
                 return super().__call__(environ, start_response)
-
         werkzeug.run_simple(
             "0.0.0.0",
             port,
             _HostDispatcherApplication(create_backend_app),
             threaded=True,
-            ssl_context=None,
+            ssl_context=(cert_file, key_file),
         )
 
     def _start_server(self):
         port = self.port = get_ephemeral_port(2)
         self.endpoint = f"http://{self.host}:{port}"
+        self.working_dir = mkdtemp(suffix="MotoS3StorageFixtureFactory")
         self._iam_endpoint = f"http://127.0.0.1:{port}"
+        self.http_protocol = "http" if not 
 
-        p = self._p = multiprocessing.Process(target=self.run_server, args=(port,))
+        
+        self.key_file = os.path.join(self.working_dir, "key.pem")
+        self.cert_file = os.path.join(self.working_dir, "cert.pem")
+        self.client_cert_file = os.path.join(self.working_dir, "client.pem")
+        ca = trustme.CA()
+        server_cert = ca.issue_cert("127.0.0.1")
+        server_cert.private_key_pem.write_to_path(self.key_file)
+        server_cert.cert_chain_pems[0].write_to_path(self.cert_file)
+        ca.cert_pem.write_to_path(self.client_cert_file)
+        
+        p = self._p = multiprocessing.Process(target=self.run_server, args=(port, self.key_file, self.cert_file,))
         p.start()
         wait_for_server_to_come_up(self.endpoint, "moto", p)
 
@@ -242,6 +259,7 @@ class MotoS3StorageFixtureFactory(BaseS3StorageFixtureFactory):
 
     def __exit__(self, exc_type, exc_value, traceback):
         GracefulProcessUtils.terminate(self._p)
+        safer_rmtree(self, self.working_dir)
 
     def _create_user_get_key(self, user: str, iam=None):
         iam = iam or self._iam_admin

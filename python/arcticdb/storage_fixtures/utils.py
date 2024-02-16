@@ -20,6 +20,7 @@ import warnings
 from typing import Union, Any
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
+import trustme
 
 _WINDOWS = platform.system() == "Windows"
 _DEBUG = os.getenv("ACTIONS_RUNNER_DEBUG", default=None) in (1, "True")
@@ -97,11 +98,24 @@ def wait_for_server_to_come_up(url: str, service: str, process: ProcessUnion, *,
         assert alive(), service + " process died shortly after start up"
         time.sleep(sleep)
         try:
-            response = requests.get(url, timeout=req_timeout)  # head() confuses Mongo
+            response = requests.get(url, timeout=req_timeout, verify=False)  # head() confuses Mongo
             if response.status_code < 500:  # We might not have permission, so not requiring 2XX response
                 break
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             pass
+
+
+def create_ssl_cert_for_testing(working_dir: str):
+    key_file = os.path.join(working_dir, "key.pem")
+    cert_file = os.path.join(working_dir, "cert.pem")
+    client_cert_file = os.path.join(working_dir, "client.pem")
+
+    ca = trustme.CA()
+    server_cert = ca.issue_cert("127.0.0.1")
+    server_cert.private_key_pem.write_to_path(key_file)
+    server_cert.cert_chain_pems[0].write_to_path(cert_file)
+    ca.cert_pem.write_to_path(client_cert_file)
+    return key_file, cert_file, client_cert_file
 
 
 class ExceptionInCleanUpWarning(Warning):
