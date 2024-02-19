@@ -24,12 +24,11 @@ jobs:
           token: ${{ secrets.ARCTICDB_TEST_PAT }}
 
       - name: Get tags
-        if: inputs.run_all_benchmarks == true
         id: get_tags
         run: | 
-          python3 build_tooling/get_tag_commits.py
+          python3 build_tooling/get_tag_commits.py ${{ inputs.run_all_benchmarks == true && '--run_all_benchmarks' || ''}}
     outputs:
-      matrix: ${{ steps.get_tags.outputs.commits || github.sha }}
+      matrix: ${{ steps.get_tags.outputs.commits }}
 
   cibw_docker_image:
     uses: ./.github/workflows/cibw_docker_image.yml

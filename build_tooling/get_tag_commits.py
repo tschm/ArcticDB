@@ -2,6 +2,7 @@
 import os
 import re
 import subprocess
+from argparse import ArgumentParser
 
 
 def get_git_tags():
@@ -38,8 +39,26 @@ def get_commit_from_tag(tag):
     return result.stdout.strip()
 
 
-tags = get_git_tags()
-commits = [get_commit_from_tag(tag) for tag in tags]
+# Parse the command line arguments
+parser = ArgumentParser(description="Get git tags and their corresponding commits.")
+parser.add_argument(
+    "--run_all_benchmarks",
+    help="Should we get the tags and commits for all benchmarks, or just the current one",
+    action="store_true",
+)
+
+args = parser.parse_args()
+
+if args.run_all_benchmarks:
+    tags = get_git_tags()
+    commits = [get_commit_from_tag(tag) for tag in tags]
+else:
+    # Get the current git commit hash
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+    )
+    commits = [result.stdout.strip()]
+
 short_commits = [commit[:8] for commit in commits]
 
 print(
