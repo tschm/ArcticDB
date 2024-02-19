@@ -13,7 +13,7 @@ on:
     - "**/*.md"
 
 jobs:
-  get_tag_commits:
+  get_commits_to_benchmark:
     name: Get tag commits  
     runs-on: ubuntu-latest  
     steps:  
@@ -24,11 +24,12 @@ jobs:
           token: ${{ secrets.ARCTICDB_TEST_PAT }}
 
       - name: Get tags
+        if: inputs.run_all_benchmarks == true
         id: get_tags
         run: | 
           python3 build_tooling/get_tag_commits.py
     outputs:
-      matrix: ${{ steps.get_tags.outputs.commits }}
+      matrix: ${{ steps.get_tags.outputs.commits || github.sha }}
 
   cibw_docker_image:
     uses: ./.github/workflows/cibw_docker_image.yml
@@ -45,10 +46,6 @@ jobs:
       matrix: 
         commits: ${{ fromJson(needs.get_tag_commits.outputs.matrix) }}  
     runs-on: ubuntu-latest
-    # container:
-    #   image: ${{needs.cibw_docker_image.outputs.tag}}
-    #   volumes:
-    #     - /:/mnt
     permissions:
       contents: write # Technically not necessary since the ARCTICDB_TEST_PAT token override exists
     env:
@@ -98,17 +95,38 @@ jobs:
           python -m asv machine -v --yes --machine ArcticDB-Free-Runner
 
       - name: Benchmark commit 
+        if: inputs.run_all_benchmarks == true
         shell: bash -el {0}
         run: | 
           git config --global --add safe.directory /__w/ArcticDB/ArcticDB
           python -m asv run -v --show-stderr ${{ matrix.commits }}^!
           # python -m asv run -v --show-stderr HASHFILE:python/hashes_to_benchmark.txt
 
-      - name: Publish results to ArcticDB
+      - name: Benchmark only latest commit
+        if: github.event_name != 'pull_request' && inputs.run_all_benchmarks == false
+        shell: bash -el {0}
+        run: |
+          python -m asv run -v --show-stderr HEAD^!
+        
+      - name: Benchmark against master
+        if: github.event_name == 'pull_request' && inputs.run_all_benchmarks == false
+        shell: bash -el {0}
+        run: |
+          python -m asv continuous -v --show-stderr origin/master HEAD -f 1.15
+
+      - name: Publish official results to ArcticDB
+        if: github.ref == 'refs/heads/master'
         shell: bash -el {0}
         run: |
           pip install arcticdb[Testing]
-          python build_tooling/save_asv_to_db.py 
+          python build_tooling/transform_asv_results.py --mode save
+
+      - name: Publish unofficial results to ArcticDB
+        if: github.ref != 'refs/heads/master'
+        shell: bash -el {0}
+        run: |
+          pip install arcticdb[Testing]
+          python build_tooling/transform_asv_results.py --mode save --arcticdb_library ${{ github.ref_name }}_asv_results
 
   # code_coverage:
   #   needs: [cibw_docker_image]  
