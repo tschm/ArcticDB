@@ -40,11 +40,11 @@ jobs:
 
   process_tags:  
     name: Process tags  
-    needs: [get_tag_commits, cibw_docker_image]  
+    needs: [get_commits_to_benchmark, cibw_docker_image]  
     strategy:
       fail-fast: false
       matrix: 
-        commits: ${{ fromJson(needs.get_tag_commits.outputs.matrix) }}  
+        commits: ${{ fromJson(needs.get_commits_to_benchmark.outputs.matrix) }}  
     runs-on: ubuntu-latest
     permissions:
       contents: write # Technically not necessary since the ARCTICDB_TEST_PAT token override exists
