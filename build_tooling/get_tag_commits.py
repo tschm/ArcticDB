@@ -54,6 +54,7 @@ if args.run_all_benchmarks:
     commits = [get_commit_from_tag(tag) for tag in tags]
 else:
     # Get the current git commit hash
+    tags = ["HEAD"]
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], capture_output=True, text=True
     )
