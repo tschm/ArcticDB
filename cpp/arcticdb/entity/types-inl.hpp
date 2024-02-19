@@ -185,12 +185,6 @@ struct formatter<arcticdb::proto::descriptors::StreamDescriptor_FieldDescriptor>
         return fmt::format_to(ctx.out(), "{}: {}", field_desc.name(), field_desc.type_desc());
     }
 };
-    auto format(const arcticdb::entity::StreamId& tsid, FormatContext& ctx) const {
-        return std::visit([&ctx](auto&& val) {
-            return format_to(ctx.out(), "{}", val);
-            }, tsid);
-    }
-};
 
 
 }
